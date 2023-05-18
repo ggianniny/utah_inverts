@@ -5,3 +5,161 @@ date: "2023-05-18"
 output: html_document
 ---
 
+Loading packages: 
+
+```{r}
+library(tidyverse) #For data wrangling
+library(lubridate) #For working with dates
+library(ggplot2) #Plotting
+library(RColorBrewer)
+library(patchwork)
+library(stringr)
+library(vegan)
+library(broom)
+library(sp)
+```
+
+## Overview
+
+This script cleans and organizes aquatic invertebrate data obtained from the National Aquatic Monitoring Center (NAMC) for the state of Utah. The two input data files are: 
+
+  * **Utah_Sample_Data_Final_comids.csv** - sample metadata for all samples. Key columns are: 
+  
+      - sampleId (unique to each sample), siteID (unique to each site), siteLongitude and siteLatitude, sampleDate, sampleType, sampleMethod, sampleMethodId, habitatName, habitatID, area, fieldSplit, labSplit, mesh, COMID (unique to each stream segment)
+
+  * **Utah_Taxa_Data_Final.csv** - taxa data for all samples. Key columns are: 
+  
+    - organismId (unique to each organism), sampleId, taxonomyId (unique to each taxa), levelId (unique to each classification level), levelName (finest level of classification), lifeStageId (unique to each lifestage), lifeStage, lifeStageAbbreviation, splitCount, labSplit, fieldSplit
+    
+Initial data cleaning objectives are to: 
+
+  1. Get rid of unneccesary columns in each dataset, then combine the two datasets (merge by sampleID)
+  
+  2. Check lab split proportions across the dataset - make a histogram or similar, what are the lab split values/bounds? 
+  
+  * Do we need to have a cutoff? 
+  
+  3. Deal with replicates: Average true replicates (samples from the same day or within one day of eachother).
+  
+  * Average within-year samples
+    
+  * Average within-reach (same COMID) samples
+
+Data cleaning steps from Rumschlag et al: 
+
+  * Only use wadeable stream data
+  
+  * Control for different sampling methods: only use those that have been shown to produce similar results
+  
+  * Only use area-limited samples
+  
+  * Only include genera that were identified by both agencies (USGS and EPA)
+  
+  * Address changes in taxonomy: update old taxa names to the new taxonomy; create complexes of genera when unclear if updated or not. 
+  * Address ambiguous naming and samples not ID'd to the genus level: Drop any obs. not ID'd to genus level; use genus level for samples with multiple species names (e.g. species1/species2), normalize any combined genus names - e.g., for "genus1/genus2", change all observations of "genus1" or "genus2" to "genus1/genus2". 
+      
+---
+---
+
+## I. Initial data cleaning objectives: 
+
+### 1. Get rid of unneccesary columns in each dataset, then combine the two datasets (merge by sampleID)
+
+**Metadata:** 
+
+Read in the datasets, select key columns listed in intro: 
+
+```{r}
+metadata <- read.csv("raw_data/Utah_Sample_Data_Final_comids.csv")%>% #read in datafile
+  select("sampleId" , "siteId", "siteLongitude", "siteLatitude", "sampleDate", "sampleType", "sampleMethod", "sampleMethodId", "habitatName", "habitatId", "area", "fieldSplit", "labSplit", "mesh", "COMID" ) #Selecting desired columns
+
+taxa <- read.csv("raw_data/Utah_Taxa_Data_Final.csv")%>% #read in datafile
+  select("organismId" , "sampleId", "taxonomyId", "levelId", "levelName", "lifeStageId", "lifeStage", "lifeStageAbbreviation", "splitCount", "labSplit", "fieldSplit") #selecting desired columns
+```
+  
+Checking # samples in each dataframe: 
+
+```{r}
+length(unique(metadata$sampleId)) #number unique sample ID's in metadata
+length(unique(taxa$sampleId)) #number unique sample ID's in taxa  data
+```
+
+160 more sample ID's in the metadata than in the taxa data, so should have metadata for all taxa samples. 
+
+Merge the dataframes: result should be 185,366 rows x 23 columns
+
+```{r}
+taxa_meta <- merge(taxa, metadata) #merge
+dim(taxa_meta) #check dimensions 
+```
+
+Save this dataframe: 
+
+```{r}
+write.csv(taxa_meta, "raw_data/ut_metadata_taxa_combined.csv")
+```
+
+### 2. Check lab split proportions across the dataset - make a histogram or similar, what are the lab split values/bounds? 
+
+First pass, basic summary of lab split range: 
+
+```{r}
+summary(taxa_meta$labSplit)
+```
+  
+Looks like there are a fair number of low lab splits, including some zeros - plotting: 
+
+```{r}
+labsplit.hist <- ggplot(taxa_meta, aes(x = labSplit))+ #x axis = labSplit
+  geom_histogram(color = "Black", fill = "Grey", bins = 70)+ 
+  theme_classic()+
+  geom_vline(xintercept = 0.055, linetype = "dashed", color = "Red")+ #add vertical line at 0.055 (cutoff used in Rumschlag et al.)
+  labs(x = "Lab Split", y = "Count")
+labsplit.hist
+```
+
+`r round((nrow(filter(metadata, labSplit < 0.055))/nrow(metadata))*100, 2)` percent of sites (n = `r nrow(filter(metadata, labSplit < 0.055))`) are below the 0.055 cutoff from Rumschlag et al (dashed red line). 
+
+#### A. Do we need to have a cutoff? 
+
+For now - using the same cutoff as Rumschlag et al: 
+
+```{r}
+taxa_meta_labsplit <- taxa_meta %>%
+  filter(!labSplit < 0.055) #remove all observations with labSplit < 0.055
+```
+
+Using this cutoff means we lose `r round(((nrow(taxa_meta)-nrow(taxa_meta_labsplit))/nrow(taxa_meta))*100, 2)` percent of observations (`r nrow(taxa_meta)-nrow(taxa_meta_labsplit)` individual observations). 
+
+### 3 Deal with replicates: Average true replicates (samples from the same day or within one day of eachother).
+  
+#### A. Average within-year samples
+    
+#### B. Average within-reach (same COMID) samples
+
+---
+---
+
+## II. Data cleaning steps from Rumschlag et al: 
+
+### 1. Only use wadeable stream data
+  
+### 2. Control for different sampling methods: only use those that have been shown to produce similar results
+  
+### 3. Only use area-limited samples
+  
+### 4. Only include genera that were identified by both agencies (USGS and EPA)
+  
+### 5. Address changes in taxonomy: 
+
+#### A. Update old taxa names to the new taxonomy
+
+#### B. Create complexes of genera when unclear if updated or not. 
+
+### 6. Address ambiguous naming and samples not ID'd to the genus level: 
+
+#### A. Drop any obs. not ID'd to genus level
+
+#### B. Use genus level for samples with multiple species names (e.g. species1/species2)
+
+#### C. Normalize any combined genus names - e.g., for "genus1/genus2", change all observations of "genus1" or "genus2" to "genus1/genus2".

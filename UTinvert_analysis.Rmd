@@ -1,0 +1,24 @@
+---
+title: "Utah Invert Data Analysis"
+author: "Gordon Gianniny"
+date: "2023-05-18"
+output: html_document
+---
+
+Loading packages: 
+
+```{r}
+library(tidyverse) #For data wrangling
+library(lubridate) #For working with dates
+library(ggplot2) #Plotting
+library(RColorBrewer)
+library(patchwork)
+library(stringr)
+library(vegan)
+library(broom)
+library(sp)
+```
+
+
+
+
