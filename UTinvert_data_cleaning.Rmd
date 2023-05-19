@@ -25,7 +25,7 @@ This script cleans and organizes aquatic invertebrate data obtained from the Nat
 
   * **Utah_Sample_Data_Final_comids.csv** - sample metadata for all samples. Key columns are: 
   
-      - sampleId (unique to each sample), siteID (unique to each site), siteLongitude and siteLatitude, sampleDate, sampleType, sampleMethod, sampleMethodId, habitatName, habitatID, area, fieldSplit, labSplit, mesh, COMID (unique to each stream segment)
+      - sampleId (unique to each sample), customerAbbreviation (unique to each sampling agency), siteID (unique to each site), siteLongitude and siteLatitude, sampleDate, sampleType, sampleMethod, sampleMethodId, habitatName, habitatID, area, fieldSplit, labSplit, mesh, COMID (unique to each stream segment)
 
   * **Utah_Taxa_Data_Final.csv** - taxa data for all samples. Key columns are: 
   
@@ -71,10 +71,10 @@ Read in the datasets, select key columns listed in intro:
 
 ```{r}
 metadata <- read.csv("raw_data/Utah_Sample_Data_Final_comids.csv")%>% #read in datafile
-  select("sampleId" , "siteId", "siteLongitude", "siteLatitude", "sampleDate", "sampleType", "sampleMethod", "sampleMethodId", "habitatName", "habitatId", "area", "fieldSplit", "labSplit", "mesh", "COMID" ) #Selecting desired columns
+  select("sampleId" , "customerAbbreviation", "siteId", "siteLongitude", "siteLatitude", "sampleDate", "sampleType", "sampleMethod", "sampleMethodId", "habitatName", "habitatId", "area", "fieldSplit", "labSplit", "mesh", "COMID" ) #Selecting desired columns
 
 taxa <- read.csv("raw_data/Utah_Taxa_Data_Final.csv")%>% #read in datafile
-  select("organismId" , "sampleId", "taxonomyId", "levelId", "levelName", "lifeStageId", "lifeStage", "lifeStageAbbreviation", "splitCount", "labSplit", "fieldSplit") #selecting desired columns
+  select("organismId" , "sampleId", "taxonomyId", "scientificName", "levelId", "levelName", "phylum", "class", "order", "family", "subFamily", "genus", "species",  "lifeStageId", "lifeStage", "lifeStageAbbreviation", "splitCount", "labSplit", "fieldSplit") #selecting desired columns
 ```
   
 Checking # samples in each dataframe: 
@@ -86,11 +86,23 @@ length(unique(taxa$sampleId)) #number unique sample ID's in taxa  data
 
 160 more sample ID's in the metadata than in the taxa data, so should have metadata for all taxa samples. 
 
-Merge the dataframes: result should be 185,366 rows x 23 columns
+Merge the dataframes and re-code relevant colums as different classes: result should be 185,366 rows x 32 columns
 
 ```{r}
-taxa_meta <- merge(taxa, metadata) #merge
+taxa_meta <- merge(taxa, metadata)%>%#merge
+  mutate(
+    customerAbbreviation = as.factor(customerAbbreviation), 
+    levelName = as.factor(levelName), #recoding categorical columns as factors
+    lifeStage = as.factor(lifeStage), #recoding categorical columns as factors
+    sampleDate = mdy(sampleDate), #recoding date column in r date format
+    sampleType = as.factor(sampleType), #recoding categorical columns as factors
+    sampleMethod = as.factor(sampleMethod), #recoding categorical columns as factors
+    habitatName = as.factor(habitatName), #recoding categorical columns as factors
+    habitatId = as.factor(habitatId)#recoding categorical columns as factors
+  )
+  
 dim(taxa_meta) #check dimensions 
+  
 ```
 
 Save this dataframe: 
@@ -131,11 +143,178 @@ taxa_meta_labsplit <- taxa_meta %>%
 
 Using this cutoff means we lose `r round(((nrow(taxa_meta)-nrow(taxa_meta_labsplit))/nrow(taxa_meta))*100, 2)` percent of observations (`r nrow(taxa_meta)-nrow(taxa_meta_labsplit)` individual observations). 
 
-### 3 Deal with replicates: Average true replicates (samples from the same day or within one day of eachother).
+### 3 Deal with replicates: 
+
+First, how much variation is there in agency, sampling method, habitat type, etc? 
+
+```{r}
+categoricals <- taxa_meta_labsplit %>% 
+  select_if(is.factor)%>% #extract all factor variables
+  summarise_all(n_distinct)%>% #count # distinct levels in each factor
+  mutate(n = row_number())%>% #extra col for pivot
+  pivot_longer(!n, names_to = "variable", values_to = "n_levels")%>% #pivot longer to get column for variable names, column for # levels
+  select(!n) #drop extra column
+categoricals
+```
+
+16 different levels of identification, 6 life stages, 49 "customers" all samples are benthic, 3 sample methods and habitat types. Will probably want to check for variation between:
+
+  * Different sampling methods
   
-#### A. Average within-year samples
+  * Different habitat types
+  
+  * Different agencies
+  
+  * Different mesh sizes (?)
+  
+Will also probably want to standardize which lifestages we use (ie include adults, or not?) and which level of classification we use (e.g. Rumschlag et al threw out anything not classified at least to genus)
+
+**What are the different life stages, sampling types & habitat types?**
+
+```{r}
+levels(taxa_meta_labsplit$lifeStage) #return levels of lifeStage
+levels(taxa_meta_labsplit$sampleMethod) #return levels of sampleMethod
+levels(taxa_meta_labsplit$habitatName) #retunr levels of habitatName
+```
+
+Can we treat these as "equivalent"? And do we want to keep all different life stages? 
+
+**Classification levels - how much of the data is classified to genus?**
+
+First - check which codes correspond with which lifestage
+
+```{r}
+level_codes <- taxa_meta_labsplit %>%
+  select(levelName, levelId)%>% #extract level names and codes
+  distinct()%>% #combine duplicate rows
+  arrange(levelId) #sort by levelID
+level_codes
+```
+
+Visual: 
+
+```{r}
+level.hist <- ggplot(taxa_meta_labsplit, aes(x = levelId))+ #x axis = levelId
+  geom_histogram(fill = "Grey", color = "Black", bins = 15)+ #changing histogram color and bin size
+  geom_vline(xintercept = 23, linetype = "dashed", color = "Red")+ #adding vertical line at 23 (code for genus)
+  theme_classic()+
+  labs( x = "Taxonomic Level ID", y = "Count") #axis labels
+level.hist
+```
+
+Dashed red line = Genus - all samples with smaller taxonomic ID's are classified to higher levels. 
+
+If we just used observations classified to genus or lower, we would lose `r round((nrow(filter(taxa_meta_labsplit, levelId < 23)) / nrow(taxa_meta_labsplit))*100, 2)` percent of the data, leaving  `r nrow(filter(taxa_meta_labsplit, levelId >= 23))` observations remaining. 
+
+#### A. Calculate Richness for each sample:
+
+Average within-year samples
+
+First, need to count sample-by-sample species richness. Assumptions for now are: 
+
+  * We want to include all life stages
+  
+  * We can treat all three sampling methods and habitat types as equivalent
+  
+  * All of the unique values of "scientificName" represent unique taxa (probably not true, but sticking with that for now)
+  
+  * We don't need to make any adjustments for area sampled or lab/field split ratios. 
+  
+Calculating species richness and total abundance for each sample: 
+
+```{r}
+sample_richness <- taxa_meta_labsplit %>%
+  group_by(sampleId, labSplit, fieldSplit, siteId, siteLongitude, siteLatitude, habitatName, area, mesh, COMID, sampleDate)%>% #group by sampleId, plus keep other cols for future use. 
+  summarise(richness = length(unique(scientificName)), #calculate richness = # unique values of scientificName in each sampleID
+            tot_abundance = sum(splitCount)) #calculate total abundance = sum of counts for all taxa at that site
+```
     
-#### B. Average within-reach (same COMID) samples
+Save this file for future analyses: 
+
+```{r}
+write.csv(sample_richness, "cleaned_data/sample_richness_noCorrections.csv")
+```
+
+#### B. Average true replicates (samples from the same day or within one day of eachother).
+
+Average all samples collected from the same site on the same day: 
+
+```{r}
+site_richness_day <- sample_richness %>%
+  group_by(siteId, sampleDate, siteLongitude, siteLatitude, habitatName, area, mesh, COMID)%>% # group by siteId and sampleDate
+  summarise(richness_xbar = mean(richness), #calculate mean richness
+            abund_xbar = mean(tot_abundance), #calculate mean abundance
+            labSplit = mean(labSplit), #mean labSplit across replicates
+            fieldSplit = mean(fieldSplit)) #mean fieldSplit across replicates
+```
+
+Average all samples from the same site within **5 days** of each other: *(NOTE: haven't been able to figure out how to merge obs with in 1 day of eachother)*
+
+```{r}
+site_richness_5d <- site_richness_day %>%
+  arrange(siteId, sampleDate)%>% #sort by siteId and sampleDate
+  mutate(doy = yday(sampleDate), #new column with day of year of sample
+         doy_round = (5*round(doy/5)), #round day of year to nearest 5
+         yr = year(sampleDate), #new column with year of sample
+         site_doy_yr = paste(siteId, doy_round, yr, sep = "_"))%>% #new column with combined string of siteId, rounded day of year, and sample year for grouping
+  group_by(site_doy_yr, siteId, siteLongitude, siteLatitude, habitatName, area, mesh, COMID)%>% #group by siteId/doy/yr column, retain other cols
+  summarise(richness_xbar = mean(richness_xbar), #calculate mean richness
+            abund_xbar = mean(abund_xbar), #calculate mean abundance
+            labSplit = mean(labSplit), #calculate mean labSplit
+            fieldSplit = mean(fieldSplit), #calculate mean fieldSplit
+            sampleDate = mean(sampleDate)) #calculate mean sampleDate
+
+```
+
+Check which rows were combined:
+
+```{r}
+sr5_comp <- site_richness_5d[,2:13] #get rid of extra column in new df for comparison
+combined <- dplyr::setdiff(site_richness_day, sr5_comp) #new object with the 10 rows that are different between the daily dataframe and the 5 day dataframe
+combined
+```
+
+All rows in the daily dataset that aren't in the 5-day dataset have sampleDates within 5 days of eachother, so appears to be working correctly. 
+
+Save this file: 
+
+```{r}
+write.csv(sr5_comp, "cleaned_data/site_5day_richness.csv")
+```
+
+#### C. Average within-year samples
+
+Calclulate averages:
+
+```{r}
+site_yr_richness <- sr5_comp %>%
+  mutate(yr = year(sampleDate))%>%
+  group_by(siteId, yr)%>%
+  summarise(richness_xbar = mean(richness_xbar), 
+            abund_xbar = mean(abund_xbar), 
+            labSplit = mean(labSplit), 
+            fieldSplit = mean(fieldSplit), 
+            area = mean(area), 
+            mesh = mean(mesh, na.rm = T))
+```
+
+Add metadata back in:
+
+```{r}
+meta_sub <- metadata%>%
+  select(siteId, siteLatitude, siteLongitude, COMID)%>%
+  distinct()
+
+site_yr_richness2 <- merge(site_yr_richness, meta_sub)
+```
+
+Save file: 
+
+```{r}
+write.csv(site_yr_richness2, "cleaned_data/site_year_richness.csv")
+```
+
+#### D. Average within-reach (same COMID) samples
 
 ---
 ---
@@ -145,7 +324,7 @@ Using this cutoff means we lose `r round(((nrow(taxa_meta)-nrow(taxa_meta_labspl
 ### 1. Only use wadeable stream data
   
 ### 2. Control for different sampling methods: only use those that have been shown to produce similar results
-  
+
 ### 3. Only use area-limited samples
   
 ### 4. Only include genera that were identified by both agencies (USGS and EPA)
