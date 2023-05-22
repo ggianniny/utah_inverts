@@ -59,8 +59,77 @@ ggplot(site_inverts, aes(x = richness_xbar))+
 
 Data are fairly normally distributed, maybe slightly bimodal. 
 
+What are the general trends in richness over time at each site? Simplified faceted scatterplot + regression line for each site: 
+
+```{r, warning=F}
+site.trends <- ggplot(site_inverts, aes(y = richness_xbar, x = yr, color = factor(siteId)))+
+  geom_point(size = 0.5)+
+  geom_smooth(se = F, method = "lm", size = 0.5)+
+  theme_classic()+
+  facet_wrap(~factor(siteId), scales = "free")+
+  theme(legend.position = "none", 
+        strip.text = element_blank(),
+        strip.background = element_blank(), 
+        axis.text = element_blank(), 
+        axis.ticks = element_blank())+
+  labs(x = "Year", 
+       y = "Mean Richness")
+site.trends
+```
+
+A few initial observations: 
+
+  * No consistent trend across all sites - some look flat, some increase, some decrease. 
+  
+  * Seems like most sites with longer-term data (more points) generally have increasing trends. 
+  
+  * Very clear trends (+ or -) at some sites, others are more scattered. 
+  
+  * Would be cool to see if there's some other variable (location, elevation, land use, etc) that explains different trends @ different sites (i.e. why some are increasing, others are decreasing)
+
+
+Save: 
+
+```{r}
+ggsave("plots/site_richness_trends.jpg", site.trends, device = "jpeg", height = 8.5, width = 8.5, units = "in", dpi = "retina")
+```
+
 ### B. By COMID:
 
+Checking distribution: 
+
+```{r}
+ggplot(comid_inverts, aes(x = richness_xbar))+
+  geom_histogram(fill = "Grey", color = "Black", bins = 70)+
+  theme_classic()+
+  labs(x = "Mean Richness", y = "Count")
+```
+
+Same as above, might be slightly more bimodal. 
+
+What are the general trends in richness over time for each COMID? Simplified faceted scatterplot + regression line for each COMID: 
+
+```{r, warning=F}
+comid.trends <- ggplot(comid_inverts, aes(y = richness_xbar, x = yr, color = factor(COMID)))+
+  geom_point(size = 0.5)+
+  geom_smooth(se = F, method = "lm", size = 0.5)+
+  theme_classic()+
+  facet_wrap(~factor(COMID), scales = "free")+
+  theme(legend.position = "none", 
+        strip.text = element_blank(),
+        strip.background = element_blank(), 
+        axis.text = element_blank(), 
+        axis.ticks = element_blank())+
+  labs(x = "Year", 
+       y = "Mean Richness")
+comid.trends
+```
+
+Save: 
+
+```{r}
+ggsave("plots/comid_richness_trends.jpg", comid.trends, device = "jpeg", height = 8.5, width = 8.5, units = "in", dpi = "retina")
+```
 
 
 
