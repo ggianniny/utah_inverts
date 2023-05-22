@@ -33,17 +33,31 @@ This script cleans and organizes aquatic invertebrate data obtained from the Nat
     
 Initial data cleaning objectives are to: 
 
-  1. Get rid of unneccesary columns in each dataset, then combine the two datasets (merge by sampleID)
+1. Get rid of unneccesary columns in each dataset, then combine the two datasets (merge by sampleID)
   
-  2. Check lab split proportions across the dataset - make a histogram or similar, what are the lab split values/bounds? 
+2. Account for differences in lab split, sampling methods, etc. 
   
-  * Do we need to have a cutoff? 
+    A. Check lab split proportions across the dataset - what are the lab split values/bounds? Set a cutoff.  
   
-  3. Deal with replicates: Average true replicates (samples from the same day or within one day of eachother).
+    B. Sampling method, life stage, habitat type, and mesh size
   
-  * Average within-year samples
+    C. Classification levels - How much of the data is classified to genus? (Keeping all for now)
+  
+3. Calculate richness & deal with replicates:
+  
+    A. Calculate richness for each sample
+  
+    B. Average "true" replicates (within a day/ within 5 days)
+  
+    C. Average within-year (same siteId) samples
     
-  * Average within-reach (same COMID) samples
+    D Average within-reach (same COMID) sites
+  
+4. Identify and extract sites with long-term (4+ year) data
+  
+    A. By site
+  
+    B. By COMID
 
 Data cleaning steps from Rumschlag et al: 
 
@@ -111,7 +125,9 @@ Save this dataframe:
 write.csv(taxa_meta, "raw_data/ut_metadata_taxa_combined.csv")
 ```
 
-### 2. Check lab split proportions across the dataset - make a histogram or similar, what are the lab split values/bounds? 
+### 2. Accounting for differences in lab split, sampling methods, etc. 
+
+#### A. Lab Split - what's the range? Do we need a cutoff? 
 
 First pass, basic summary of lab split range: 
 
@@ -130,9 +146,7 @@ labsplit.hist <- ggplot(taxa_meta, aes(x = labSplit))+ #x axis = labSplit
 labsplit.hist
 ```
 
-`r round((nrow(filter(metadata, labSplit < 0.055))/nrow(metadata))*100, 2)` percent of sites (n = `r nrow(filter(metadata, labSplit < 0.055))`) are below the 0.055 cutoff from Rumschlag et al (dashed red line). 
-
-#### A. Do we need to have a cutoff? 
+`r round((nrow(filter(metadata, labSplit < 0.055))/nrow(metadata))*100, 2)` percent of samples (n = `r nrow(filter(metadata, labSplit < 0.055))`) are below the 0.055 cutoff from Rumschlag et al (dashed red line). 
 
 For now - using the same cutoff as Rumschlag et al: 
 
@@ -143,7 +157,7 @@ taxa_meta_labsplit <- taxa_meta %>%
 
 Using this cutoff means we lose `r round(((nrow(taxa_meta)-nrow(taxa_meta_labsplit))/nrow(taxa_meta))*100, 2)` percent of observations (`r nrow(taxa_meta)-nrow(taxa_meta_labsplit)` individual observations). 
 
-### 3 Deal with replicates: 
+#### B. Sampling Method, Habitat type, life stage, and mesh size: 
 
 First, how much variation is there in agency, sampling method, habitat type, etc? 
 
@@ -169,17 +183,83 @@ categoricals
   
 Will also probably want to standardize which lifestages we use (ie include adults, or not?) and which level of classification we use (e.g. Rumschlag et al threw out anything not classified at least to genus)
 
-**What are the different life stages, sampling types & habitat types?**
+**Rules as of 05-22**:
+
+  * Keep all sampling methods
+  
+  * Keep all habitat types
+  
+  * Ignore agency for now
+  
+  * Keep all mesh sizes
+  
+  * Drop egg, exuvia, & unspecified life stages. 
+  
+  * Keep all levels of classification. 
+
+**Identify different categories in each of these variables, how much data is in each, and clean up data according to the rules above:**
+
+
+##### i. Life Stage: Drop exuvia, eggs, and unspecified
 
 ```{r}
-levels(taxa_meta_labsplit$lifeStage) #return levels of lifeStage
-levels(taxa_meta_labsplit$sampleMethod) #return levels of sampleMethod
-levels(taxa_meta_labsplit$habitatName) #retunr levels of habitatName
+ggplot(taxa_meta_labsplit, aes(x = lifeStage, fill = lifeStage))+
+  geom_bar(stat = "count", color = "Black")+
+  theme_classic()+
+  labs(x = "Life Stage", y = "No. of Observations")+
+  theme(legend.position = "none")
 ```
 
-Can we treat these as "equivalent"? And do we want to keep all different life stages? 
+Almost all larvae and, some adults. Very few eggs and exuvia. 
 
-**Classification levels - how much of the data is classified to genus?**
+Drop eggs, exuvia, and unspecified:
+
+```{r}
+taxa_meta_stage <- taxa_meta_labsplit%>%
+  filter(!lifeStage == "Egg", 
+         !lifeStage == "Exuvia", 
+         !lifeStage == "Unspecified")
+```
+
+##### ii. Sampling Method - Keep all for now:
+
+```{r}
+ggplot(taxa_meta_stage, aes(x = sampleMethod, fill = sampleMethod))+
+  geom_bar(stat = "count", color = "Black")+
+  theme_classic()+
+  labs(x = "Sample Method", y = "No. of Observations")+
+  theme(legend.position = "none")
+```
+
+Fairly evenly distibuted, lots of samples with each method. 
+
+##### iii. Habitat Type - Keep all for now:
+
+```{r}
+ggplot(taxa_meta_stage, aes(x = habitatName, fill = habitatName))+
+  geom_bar(stat = "count", color = "Black")+
+  theme_classic()+
+  labs(x = "Habitat Type", y = "No. of Observations")+
+  theme(legend.position = "none")
+```
+
+Almost all targeted riffle, few "Riffle"
+
+##### iv. Mesh Size - Keep all for now:
+
+```{r}
+ggplot(taxa_meta_stage, aes(x = factor(mesh), fill = factor(mesh)))+
+  geom_bar(stat = "count", color = "Black")+
+  theme_classic()+
+  labs(x = "Mesh Size", y = "No. of Observations")+
+  theme(legend.position = "none")
+```
+
+Quite a bit of variation, also lots of NAs. 
+
+#### C. Classification Level - Keep all for now: 
+
+**How much data is classified to genus?**
 
 First - check which codes correspond with which lifestage
 
@@ -206,13 +286,11 @@ Dashed red line = Genus - all samples with smaller taxonomic ID's are classified
 
 If we just used observations classified to genus or lower, we would lose `r round((nrow(filter(taxa_meta_labsplit, levelId < 23)) / nrow(taxa_meta_labsplit))*100, 2)` percent of the data, leaving  `r nrow(filter(taxa_meta_labsplit, levelId >= 23))` observations remaining. 
 
-#### A. Calculate Richness for each sample:
+### 3. Calculate Richness & Deal with Replicates
 
-Average within-year samples
+Assumptions for richness calculations are: 
 
-First, need to count sample-by-sample species richness. Assumptions for now are: 
-
-  * We want to include all life stages
+  * We are only including larvae, pupae, and adults. 
   
   * We can treat all three sampling methods and habitat types as equivalent
   
@@ -220,10 +298,14 @@ First, need to count sample-by-sample species richness. Assumptions for now are:
   
   * We don't need to make any adjustments for area sampled or lab/field split ratios. 
   
-Calculating species richness and total abundance for each sample: 
+  * We don't need to make any adjustments for variation in mesh size. 
+
+#### A. Calculate Richness for each sample:
+
+First, calculate species richness and total abundance for each sample: 
 
 ```{r}
-sample_richness <- taxa_meta_labsplit %>%
+sample_richness <- taxa_meta_stage %>%
   group_by(sampleId, labSplit, fieldSplit, siteId, siteLongitude, siteLatitude, habitatName, area, mesh, COMID, sampleDate)%>% #group by sampleId, plus keep other cols for future use. 
   summarise(richness = length(unique(scientificName)), #calculate richness = # unique values of scientificName in each sampleID
             tot_abundance = sum(splitCount)) #calculate total abundance = sum of counts for all taxa at that site
@@ -288,9 +370,9 @@ Calclulate averages:
 
 ```{r}
 site_yr_richness <- sr5_comp %>%
-  mutate(yr = year(sampleDate))%>%
-  group_by(siteId, yr)%>%
-  summarise(richness_xbar = mean(richness_xbar), 
+  mutate(yr = year(sampleDate))%>% #add column for year
+  group_by(siteId, yr)%>% #group by site and year
+  summarise(richness_xbar = mean(richness_xbar), #calculate mean richness, abundance, lab/fieldsplit, area, and mesh. 
             abund_xbar = mean(abund_xbar), 
             labSplit = mean(labSplit), 
             fieldSplit = mean(fieldSplit), 
@@ -302,19 +384,132 @@ Add metadata back in:
 
 ```{r}
 meta_sub <- metadata%>%
-  select(siteId, siteLatitude, siteLongitude, COMID)%>%
+  select(siteId, siteLatitude, siteLongitude, COMID)%>% #select desired metadata cols
   distinct()
 
-site_yr_richness2 <- merge(site_yr_richness, meta_sub)
+site_yr_richness2 <- merge(site_yr_richness, meta_sub) #merge with site x year richness data
 ```
 
 Save file: 
 
 ```{r}
-write.csv(site_yr_richness2, "cleaned_data/site_year_richness.csv")
+write.csv(site_yr_richness2, "cleaned_data/site_year_richness.csv") 
 ```
 
 #### D. Average within-reach (same COMID) samples
+
+Calculate average richness and abundance within each reach:
+
+```{r}
+comid_yr_richness <- site_yr_richness2 %>%
+  group_by(COMID, yr)%>% #group by COMID, year
+  summarise(richness_xbar = mean(richness_xbar), #calculate mean richnes, abundance, labSplit, fieldSplit, area, and mesh w/in each COMID * year combo. 
+            abund_xbar = mean(abund_xbar), 
+            labSplit = mean(labSplit), 
+            fieldSplit = mean(fieldSplit), 
+            area = mean(area), 
+            mesh = mean(mesh, na.rm = T))
+```
+
+Save: 
+
+```{r}
+write.csv(comid_yr_richness, "cleaned_data/comid_year_richness.csv")
+```
+
+### 4. ID and seperate sites with longer records - minimum... 4 years of data?
+
+#### A. By site: 
+
+Calculate number of years of data at each site: 
+
+```{r}
+site_pors <- site_yr_richness2 %>%
+  group_by(siteId)%>% #group by siteId
+  summarise(por = length(unique(yr)))%>% #count # years data at that site
+  arrange(desc(por)) #descending sort by period of record
+```
+
+Visualization: how many sites w/ longer-term datasets?  
+
+```{r}
+ggplot(site_pors, aes(x = factor(por), fill = factor(por)))+
+  geom_bar(stat = "count", color = "Black")+
+  theme_classic()+
+  labs(x = "No. years of data", y = "No. sites")+
+  theme(legend.position = "none")
+```
+
+Lots of sites have only 1 or 2 years of data - if use minimum 4 years, this would leave `r nrow(filter(site_pors, por >=4))` sites. 
+
+**Extract subset of data w/ at least 4 years of data**: 
+
+Extract site Id's for all sites with 4+ years of data:
+
+```{r}
+sites.4plus <- site_pors %>%
+  filter(por >= 4)%>% #remove all sites with <4yrs data
+  select(siteId) #drop extra column
+```
+
+Filter site * year richness data to only include these sites: 
+
+```{r}
+site_yr_longterm <- site_yr_richness2%>%
+  filter(siteId%in%sites.4plus$siteId) #filter to drop all siteId's not in the sites.4plus list
+```
+
+Save: 
+
+```{r}
+write.csv(site_yr_longterm, "cleaned_data/longterm_site_richness.csv")
+```
+
+#### B. By COMID: 
+
+Calculate number of years of data for each COMID: 
+
+```{r}
+comid_pors <- comid_yr_richness %>%
+  group_by(COMID)%>% #group by COMID
+  summarise(por = length(unique(yr)))%>% #count # years data at that COMID
+  arrange(desc(por)) #descending sort by period of record
+```
+
+Visualization: how many sites w/ longer-term datasets?  
+
+```{r}
+ggplot(comid_pors, aes(x = factor(por), fill = factor(por)))+
+  geom_bar(stat = "count", color = "Black")+
+  theme_classic()+
+  labs(x = "No. years of data", y = "No. COMIDs")+
+  theme(legend.position = "none")
+```
+
+Lots of sites have only 1 or 2 years of data - if use minimum 4 years, this would leave `r nrow(filter(comid_pors, por >=4))` sites - so this adds an extra `r (nrow(filter(comid_pors, por >=4)))-(nrow(sites.4plus))` COMID's as compared to using the site-level data. 
+
+**Extract subset of data w/ at least 4 years of data**: 
+
+Extract site Id's for all sites with 4+ years of data:
+
+```{r}
+comid.4plus <- comid_pors %>%
+  filter(por >= 4)%>% #remove all sites with <4yrs data
+  select(COMID) #drop extra column
+```
+
+Filter site * year richness data to only include these sites: 
+
+```{r}
+comid_yr_longterm <- comid_yr_richness%>%
+  filter(COMID%in%comid.4plus$COMID) #filter to drop all COMID's not in the comid.4plus list
+```
+
+Save: 
+
+```{r}
+write.csv(site_yr_longterm, "cleaned_data/longterm_comid_richness.csv")
+```
 
 ---
 ---
