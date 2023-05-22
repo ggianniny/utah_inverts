@@ -5,9 +5,8 @@ date: "2023-05-18"
 output: html_document
 ---
 
-Loading packages: 
-
-```{r}
+```{r include=FALSE}
+#Loading packages:
 library(tidyverse) #For data wrangling
 library(lubridate) #For working with dates
 library(ggplot2) #Plotting
@@ -81,16 +80,25 @@ Data cleaning steps from Rumschlag et al:
 
 **Metadata:** 
 
-Read in the datasets, select key columns listed in intro: 
+Read in the datasets, select key columns listed in intro: *(Note - also adjusting date formatting of sampleDate column to fix dates in the mid-90s coming in as dates in the future - e.g. instead of 1965-01-01, 2065-01-01)*
 
 ```{r}
 metadata <- read.csv("raw_data/Utah_Sample_Data_Final_comids.csv")%>% #read in datafile
-  select("sampleId" , "customerAbbreviation", "siteId", "siteLongitude", "siteLatitude", "sampleDate", "sampleType", "sampleMethod", "sampleMethodId", "habitatName", "habitatId", "area", "fieldSplit", "labSplit", "mesh", "COMID" ) #Selecting desired columns
+  select("sampleId" , "customerAbbreviation", "siteId", "siteLongitude", "siteLatitude", "sampleDate", "sampleType", "sampleMethod", "sampleMethodId", "habitatName", "habitatId", "area", "fieldSplit", "labSplit", "mesh", "COMID" )%>% #Selecting desired columns
+  mutate(sampleDate = as.Date(sampleDate, format ="%m/%d/%y"),  #recode as date
+         flag = ifelse(
+           sampleDate > today(), 
+           "N", "Y"), #flag all rows with dates greater than today
+         sampleDate = as.character(sampleDate), #convert back to character to substring
+         sampleDate= ifelse(flag == "N", str_replace(sampleDate, "20", "19"), sampleDate), #substring: correct century (replace "20" with "19") for all flagged rows 
+         sampleDate = ymd(sampleDate)) #convert back to date format. 
+           
 
 taxa <- read.csv("raw_data/Utah_Taxa_Data_Final.csv")%>% #read in datafile
   select("organismId" , "sampleId", "taxonomyId", "scientificName", "levelId", "levelName", "phylum", "class", "order", "family", "subFamily", "genus", "species",  "lifeStageId", "lifeStage", "lifeStageAbbreviation", "splitCount", "labSplit", "fieldSplit") #selecting desired columns
 ```
-  
+
+
 Checking # samples in each dataframe: 
 
 ```{r}
@@ -108,7 +116,7 @@ taxa_meta <- merge(taxa, metadata)%>%#merge
     customerAbbreviation = as.factor(customerAbbreviation), 
     levelName = as.factor(levelName), #recoding categorical columns as factors
     lifeStage = as.factor(lifeStage), #recoding categorical columns as factors
-    sampleDate = mdy(sampleDate), #recoding date column in r date format
+    #sampleDate = mdy(sampleDate), #recoding date column in r date format
     sampleType = as.factor(sampleType), #recoding categorical columns as factors
     sampleMethod = as.factor(sampleMethod), #recoding categorical columns as factors
     habitatName = as.factor(habitatName), #recoding categorical columns as factors
@@ -116,7 +124,8 @@ taxa_meta <- merge(taxa, metadata)%>%#merge
   )
   
 dim(taxa_meta) #check dimensions 
-  
+
+range(taxa_meta$sampleDate) #confirming that date range is believable
 ```
 
 Save this dataframe: 

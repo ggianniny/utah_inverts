@@ -5,9 +5,9 @@ date: "2023-05-18"
 output: html_document
 ---
 
-Loading packages: 
+```{r, include = F}
+#Loading packages:
 
-```{r}
 library(tidyverse) #For data wrangling
 library(lubridate) #For working with dates
 library(ggplot2) #Plotting
@@ -18,6 +18,49 @@ library(vegan)
 library(broom)
 library(sp)
 ```
+
+## Overview
+
+This document carries out all analysis for the Utah Aquatic Insect Decline project. Input files are: 
+
+1. **longterm_site_richness.csv**: yearly average richness and abundance data for each site with at least 4 years of data (n = 142 sites)
+
+2. **longterm_comid_richness.csv**: yearly average richness and abundance data for each COMID segment with at least 4 years of data (n = 211 COMIDs)
+
+Sections are: 
+
+I. Initial data visualizations
+
+    A. By Site
+    
+    B. By COMID
+
+II. Initial statistics
+
+Read in datafiles: 
+
+```{r}
+site_inverts <- read.csv("cleaned_data/longterm_site_richness.csv")
+comid_inverts <- read.csv("cleaned_data/longterm_comid_richness.csv")
+```
+
+## I. Initial data visualizations
+
+### A. By Site: 
+
+Checking distribution: 
+
+```{r}
+ggplot(site_inverts, aes(x = richness_xbar))+
+  geom_histogram(fill = "Grey", color = "Black", bins = 70)+
+  theme_classic()+
+  labs(x = "Mean Richness", y = "Count")
+```
+
+Data are fairly normally distributed, maybe slightly bimodal. 
+
+### B. By COMID:
+
 
 
 
