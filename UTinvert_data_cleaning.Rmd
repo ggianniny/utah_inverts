@@ -16,7 +16,10 @@ library(stringr)
 library(vegan)
 library(broom)
 library(sp)
+library(geonames) #for getting elevation data
+library(rgbif) #for getting elevation data
 ```
+
 
 ## Overview
 
@@ -192,9 +195,9 @@ categoricals
   
 Will also probably want to standardize which lifestages we use (ie include adults, or not?) and which level of classification we use (e.g. Rumschlag et al threw out anything not classified at least to genus)
 
-**Rules as of 05-22**:
+**Rules as of 05-23**:
 
-  * Keep all sampling methods
+  * Keep all sampling methods, but keep in dataset throughout calculations. 
   
   * Keep all habitat types
   
@@ -202,7 +205,9 @@ Will also probably want to standardize which lifestages we use (ie include adult
   
   * Keep all mesh sizes
   
-  * Drop egg, exuvia, & unspecified life stages. 
+  * Drop egg & exuvia; count adults for non-insects and insects in orders coleoptera & hemiptera. 
+  
+  * Assume that "unspecified" samples are larvae if insects, adults if non-insects - keep in dataset. 
   
   * Keep all levels of classification. 
 
@@ -221,13 +226,27 @@ ggplot(taxa_meta_labsplit, aes(x = lifeStage, fill = lifeStage))+
 
 Almost all larvae and, some adults. Very few eggs and exuvia. 
 
-Drop eggs, exuvia, and unspecified:
+Drop eggs & exuvia; assuming that unspecified samples are adults if non-insects, larvae if insects. Drop all insect adults unless in orders Coleoptera or Hemiptera.
+
+First, make a list of the insect orders for which we want to drop observations of adults:
+
+```{r}
+insect_orders <- taxa_meta_labsplit%>%
+  select(class, order)%>% #select class and order columns
+  filter(class == "Insecta")%>% #filter all orders in class Insecta
+  distinct()%>% #remove duplicates
+  filter(!order == "Coleoptera", !order == "Hemiptera") #remove orders we want to keep (Coleoptera, Hemiptera)
+
+to.drop <- insect_orders$order #create vector of order names to drop
+```
+
+Next, drop all eggs, exuvia, and adult insects in the to.drop list of orders:
 
 ```{r}
 taxa_meta_stage <- taxa_meta_labsplit%>%
-  filter(!lifeStage == "Egg", 
-         !lifeStage == "Exuvia", 
-         !lifeStage == "Unspecified")
+  filter(!lifeStage == "Egg", #drop all eggs
+         !lifeStage == "Exuvia")%>% #drop all exuvia
+  filter(!(lifeStage == "Adult"&order%in%to.drop)) #drop all adults from the orders in the to.drop list
 ```
 
 ##### ii. Sampling Method - Keep all for now:
@@ -295,6 +314,21 @@ Dashed red line = Genus - all samples with smaller taxonomic ID's are classified
 
 If we just used observations classified to genus or lower, we would lose `r round((nrow(filter(taxa_meta_labsplit, levelId < 23)) / nrow(taxa_meta_labsplit))*100, 2)` percent of the data, leaving  `r nrow(filter(taxa_meta_labsplit, levelId >= 23))` observations remaining. 
 
+#### E. Calculate Density: 
+
+Calculate density for each observation - density = (# organisms/(labSplit*fieldSplit))/area sampled
+
+```{r}
+taxa_meta_density <- taxa_meta_stage %>%
+  mutate(taxa_density = (splitCount/(labSplit*fieldSplit))/area)
+```
+
+Save this file for future analysis: 
+
+```{r}
+write.csv(taxa_meta_density, "cleaned_data/taxa_densities.csv")
+```
+
 ### 3. Calculate Richness & Deal with Replicates
 
 Assumptions for richness calculations are: 
@@ -314,16 +348,17 @@ Assumptions for richness calculations are:
 First, calculate species richness and total abundance for each sample: 
 
 ```{r}
-sample_richness <- taxa_meta_stage %>%
-  group_by(sampleId, labSplit, fieldSplit, siteId, siteLongitude, siteLatitude, habitatName, area, mesh, COMID, sampleDate)%>% #group by sampleId, plus keep other cols for future use. 
+sample_richness <- taxa_meta_density %>%
+  group_by(sampleId, labSplit, fieldSplit, siteId, siteLongitude, siteLatitude, sampleMethod,habitatName, area, mesh, COMID, sampleDate)%>% #group by sampleId, plus keep other cols for future use. 
   summarise(richness = length(unique(scientificName)), #calculate richness = # unique values of scientificName in each sampleID
-            tot_abundance = sum(splitCount)) #calculate total abundance = sum of counts for all taxa at that site
+            tot_abundance = sum(splitCount), #calculate total abundance = sum of counts for all taxa in that sample
+            tot_dens = sum(taxa_density)) #calculate total density = sum of density (individuals/m2) for all taxa in that sample
 ```
     
 Save this file for future analyses: 
 
 ```{r}
-write.csv(sample_richness, "cleaned_data/sample_richness_noCorrections.csv")
+write.csv(sample_richness, "cleaned_data/sample_richness.csv")
 ```
 
 #### B. Average true replicates (samples from the same day or within one day of eachother).
@@ -335,8 +370,11 @@ site_richness_day <- sample_richness %>%
   group_by(siteId, sampleDate, siteLongitude, siteLatitude, habitatName, area, mesh, COMID)%>% # group by siteId and sampleDate
   summarise(richness_xbar = mean(richness), #calculate mean richness
             abund_xbar = mean(tot_abundance), #calculate mean abundance
+            density_xbar = mean(tot_dens), #calculate mean density
             labSplit = mean(labSplit), #mean labSplit across replicates
-            fieldSplit = mean(fieldSplit)) #mean fieldSplit across replicates
+            fieldSplit = mean(fieldSplit) #mean fieldSplit across replicates
+            #,sampleMethod = unique(sampleMethod) NOT RUN - keeping sampleMethod (results in keeping some samples seperate)
+            ) 
 ```
 
 Average all samples from the same site within **5 days** of each other: *(NOTE: haven't been able to figure out how to merge obs with in 1 day of eachother)*
@@ -351,6 +389,7 @@ site_richness_5d <- site_richness_day %>%
   group_by(site_doy_yr, siteId, siteLongitude, siteLatitude, habitatName, area, mesh, COMID)%>% #group by siteId/doy/yr column, retain other cols
   summarise(richness_xbar = mean(richness_xbar), #calculate mean richness
             abund_xbar = mean(abund_xbar), #calculate mean abundance
+             density_xbar = mean(density_xbar), #calculate mean density
             labSplit = mean(labSplit), #calculate mean labSplit
             fieldSplit = mean(fieldSplit), #calculate mean fieldSplit
             sampleDate = mean(sampleDate)) #calculate mean sampleDate
@@ -360,7 +399,7 @@ site_richness_5d <- site_richness_day %>%
 Check which rows were combined:
 
 ```{r}
-sr5_comp <- site_richness_5d[,2:13] #get rid of extra column in new df for comparison
+sr5_comp <- site_richness_5d[,2:14] #get rid of extra column in new df for comparison
 combined <- dplyr::setdiff(site_richness_day, sr5_comp) #new object with the 10 rows that are different between the daily dataframe and the 5 day dataframe
 combined
 ```
@@ -383,6 +422,7 @@ site_yr_richness <- sr5_comp %>%
   group_by(siteId, yr)%>% #group by site and year
   summarise(richness_xbar = mean(richness_xbar), #calculate mean richness, abundance, lab/fieldsplit, area, and mesh. 
             abund_xbar = mean(abund_xbar), 
+            density_xbar = mean(density_xbar), #calculate mean density
             labSplit = mean(labSplit), 
             fieldSplit = mean(fieldSplit), 
             area = mean(area), 
@@ -413,7 +453,8 @@ Calculate average richness and abundance within each reach:
 comid_yr_richness <- site_yr_richness2 %>%
   group_by(COMID, yr)%>% #group by COMID, year
   summarise(richness_xbar = mean(richness_xbar), #calculate mean richnes, abundance, labSplit, fieldSplit, area, and mesh w/in each COMID * year combo. 
-            abund_xbar = mean(abund_xbar), 
+            abund_xbar = mean(abund_xbar),             
+            density_xbar = mean(density_xbar), #calculate mean density
             labSplit = mean(labSplit), 
             fieldSplit = mean(fieldSplit), 
             area = mean(area), 
@@ -461,17 +502,26 @@ sites.4plus <- site_pors %>%
   select(siteId) #drop extra column
 ```
 
-Filter site * year richness data to only include these sites: 
+Filter site * year richness data to only include these sites; add elevation data:  
 
 ```{r}
 site_yr_longterm <- site_yr_richness2%>%
-  filter(siteId%in%sites.4plus$siteId) #filter to drop all siteId's not in the sites.4plus list
+  filter(siteId%in%sites.4plus$siteId)#filter to drop all siteId's not in the sites.4plus list
+
+elev <- elevation(latitude = site_yr_longterm$siteLatitude, longitude = site_yr_longterm$siteLongitude, elevation_model = "srtm3", username = "ggianniny")%>% #calculate elevation using the SRTM3 model (uses GeoNames API)
+  mutate(siteId = site_yr_longterm$siteId)%>% #add siteIDs 
+  rename(elev_m = elevation_geonames)%>% #rename cols for merge
+  select(siteId, elev_m)%>% #drop extra cols for merge
+  distinct() #remove duplicates
+
+site_yr_longterm2 <- merge(site_yr_longterm, elev) #merge with taxonomic data
+  
 ```
 
 Save: 
 
 ```{r}
-write.csv(site_yr_longterm, "cleaned_data/longterm_site_richness.csv")
+write.csv(site_yr_longterm2, "cleaned_data/longterm_site_richness.csv")
 ```
 
 #### B. By COMID: 

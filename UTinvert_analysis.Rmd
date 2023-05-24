@@ -27,28 +27,40 @@ This document carries out all analysis for the Utah Aquatic Insect Decline proje
 
 2. **longterm_comid_richness.csv**: yearly average richness and abundance data for each COMID segment with at least 4 years of data (n = 211 COMIDs)
 
+3. **taxa_densities.csv**: abundance and density info for each taxa in each sample (pre-richness calculations) - used for investigating specific taxa of interest. 
+
 Sections are: 
 
-I. Initial data visualizations
+I. Initial data visualizations & basic analysis
 
-    A. By Site
+    A. By Site: Checking distribution, examining trends in richness & density over time (site-by-site & overall) 
     
-    B. By COMID
+    B. By COMID: Checking distribution, examining trends in richness & density over time (site-by-site & overall) 
 
-II. Initial statistics
+II. Taxa of interest
+
+    A. Pteronarcys californica
+    
+    B. Zapada
+
+III. Mixed Modeling
 
 Read in datafiles: 
 
 ```{r}
 site_inverts <- read.csv("cleaned_data/longterm_site_richness.csv")
 comid_inverts <- read.csv("cleaned_data/longterm_comid_richness.csv")
+taxa_densities <-read.csv("cleaned_data/taxa_densities.csv")%>%
+  mutate(sampleDate =ymd(sampleDate))
 ```
 
-## I. Initial data visualizations
+## I. Initial data visualizations & Basic LM's
 
 ### A. By Site: 
 
-Checking distribution: 
+#### i. Checking distributions: 
+
+Richness:
 
 ```{r}
 ggplot(site_inverts, aes(x = richness_xbar))+
@@ -59,7 +71,29 @@ ggplot(site_inverts, aes(x = richness_xbar))+
 
 Data are fairly normally distributed, maybe slightly bimodal. 
 
-What are the general trends in richness over time at each site? Simplified faceted scatterplot + regression line for each site: 
+Density:
+
+```{r}
+ggplot(site_inverts, aes(x = density_xbar))+
+  geom_histogram(fill = "Grey", color = "Black", bins = 70)+
+  theme_classic()+
+  labs(x = "Mean Total Density", y = "Count")
+```
+
+Strongly left-skewed - try a log transform:
+
+```{r}
+ggplot(site_inverts, aes(x = log10(density_xbar)))+
+  geom_histogram(fill = "Grey", color = "Black", bins = 70)+
+  theme_classic()+
+  labs(x = "log10(Mean Total Density)", y = "Count")
+```
+
+Better, still slightly skewed - will use log transform for all density plots for now. 
+
+#### ii. Site-by-site trends in richness over time: 
+
+Visualization:
 
 ```{r, warning=F}
 site.trends <- ggplot(site_inverts, aes(y = richness_xbar, x = yr, color = factor(siteId)))+
@@ -94,9 +128,173 @@ Save:
 ggsave("plots/site_richness_trends.jpg", site.trends, device = "jpeg", height = 8.5, width = 8.5, units = "in", dpi = "retina")
 ```
 
+Same visualization as above, but color coded by elevation:
+
+```{r, warning=F}
+site.elev.trends <- ggplot(site_inverts, aes(y = richness_xbar, x = yr, color = elev_m))+
+  geom_point(size = 0.5)+
+  geom_smooth(se = F, method = "lm", size = 0.5)+
+  theme_classic()+
+  facet_wrap(~factor(elev_m), scales = "free")+
+  theme(legend.position = "bottom", 
+        strip.text = element_blank(),
+        strip.background = element_blank(), 
+        axis.text = element_blank(), 
+        axis.ticks = element_blank(), 
+        legend.text = element_text(angle = 45, vjust = 1, hjust = 1))+
+  labs(x = "Year", 
+       y = "Mean Richness", color = "Elevation, m")
+site.elev.trends
+```
+
+Doesn't seem to be any consistent pattern across elevations - have both increasing and decreasing trends at all elevations. 
+
+
+#### iii. Trends in richness across all sites over time: 
+
+Visualization:
+
+```{r}
+site.overall <- ggplot(filter(site_inverts, yr >=1990), aes(y = richness_xbar, x = yr))+
+  geom_point(size = 0.5)+
+  geom_smooth(se = F, method = "lm", size = 0.5)+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text = element_text(), 
+        )+
+  labs(x = "Year", 
+       y = "Mean Richness")
+site.overall
+```
+
+Basic LM: 
+
+```{r}
+site.overall.lm <- lm(richness_xbar~yr, filter(site_inverts, yr >1990))
+summary(site.overall.lm)
+```
+
+Significant *increase* in richness over time across all sites. 
+
+#### iv. Trends in overall average richness over time:
+
+Calculate richness for each year (average all sites):
+
+```{r}
+yr_avgs <- site_inverts %>%
+  group_by(yr)%>% #group by year
+  summarise(richness_xbar = mean(richness_xbar), #calculate mean richness
+            abund_xbar = mean(abund_xbar), #calculate mean abundance
+            density_xbar= mean(density_xbar), #calculate mean density
+            n_sites = length(unique(siteId))) #count # of sites per year
+```
+
+Visualization:
+
+```{r}
+yr.overall <- ggplot(filter(yr_avgs, yr >=1990), aes(y = richness_xbar, x = yr))+
+  geom_point(size = 0.5)+
+  geom_smooth(se = T,  size = 0.5)+
+  geom_smooth(se = F, method = "lm", size = 0.5, color = "Red", linetype = "dashed")+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text = element_text(), 
+        )+
+  labs(x = "Year", 
+       y = "Mean Richness")
+yr.overall
+```
+
+Basic LM:
+
+```{r}
+yr.overall.lm <- lm(richness_xbar~yr, filter(yr_avgs, yr >=1990))
+summary(yr.overall.lm)
+```
+
+Significant *increase* in overall mean richness over time
+
+#### v. Site-by-site trends in density over time:
+
+Visualization (color coded & sorted by elevation):
+
+```{r, warning=F}
+site.elev.dens <- ggplot(site_inverts, aes(y = log10(density_xbar), x = yr, color = elev_m))+
+  geom_point(size = 0.5)+
+  geom_smooth(se = F, method = "lm", size = 0.5)+
+  theme_classic()+
+  facet_wrap(~factor(elev_m), scales = "free")+
+  theme(legend.position = "bottom", 
+        strip.text = element_blank(),
+        strip.background = element_blank(), 
+        axis.text = element_blank(), 
+        axis.ticks = element_blank(), 
+        legend.text = element_text(angle = 45, vjust = 1, hjust = 1))+
+  labs(x = "Year",
+       y = "log10(Mean Total Density)", color = "Elevation, m")
+site.elev.dens
+```
+
+Similar to richness - some sites increasing, others decreasing. No obvious/consistent patterns across elevations. 
+
+#### vi. Trends in density across all sites: 
+
+Visualization:
+
+```{r}
+site.overall.dens <- ggplot(filter(site_inverts, yr >=1990), aes(y = log10(density_xbar), x = yr))+
+  geom_point(size = 0.5)+
+  geom_smooth(se = F, method = "lm", size = 0.5)+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text = element_text(), 
+        )+
+  labs(x = "Year", 
+       y = "log10(Mean Total Density)")
+site.overall.dens
+```
+
+Basic LM: 
+
+```{r}
+site.dens.lm <- lm(log10(density_xbar)~yr, filter(site_inverts, yr >1990))
+summary(site.dens.lm)
+```
+
+No change in density over time when using log transform
+
+#### vii. Trends in overall density (averaged across sites) over time: 
+
+Visualization:
+
+```{r}
+dens.overall <- ggplot(filter(yr_avgs, yr >=1990), aes(y = log10(density_xbar), x = yr))+
+  geom_point(size = 0.5)+
+  geom_smooth(se = T,  size = 0.5)+
+  geom_smooth(se = F, method = "lm", size = 0.5, color = "Red", linetype = "dashed")+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text = element_text(), 
+        )+
+  labs(x = "Year", 
+       y = "log10(Mean Total Density)")
+dens.overall
+```
+
+Basic LM:
+
+```{r}
+dens.overall.lm <- lm(log10(density_xbar)~yr, filter(yr_avgs, yr >=1990))
+summary(dens.overall.lm)
+```
+
+No change in total density over time. 
+
 ### B. By COMID:
 
-Checking distribution: 
+#### i. Checking distributions 
+
+Richness:
 
 ```{r}
 ggplot(comid_inverts, aes(x = richness_xbar))+
@@ -107,7 +305,28 @@ ggplot(comid_inverts, aes(x = richness_xbar))+
 
 Same as above, might be slightly more bimodal. 
 
-What are the general trends in richness over time for each COMID? Simplified faceted scatterplot + regression line for each COMID: 
+Density: 
+
+```{r}
+ggplot(comid_inverts, aes(x = density_xbar))+
+  geom_histogram(fill = "Grey", color = "Black", bins = 70)+
+  theme_classic()+
+  labs(x = "Mean Total Density", y = "Count")
+```
+
+Still very left-skewed; use a log transform:
+
+```{r}
+ggplot(comid_inverts, aes(x = log10(density_xbar)))+
+  geom_histogram(fill = "Grey", color = "Black", bins = 70)+
+  theme_classic()+
+  labs(x = "log10(Mean Total Density)", y = "Count")
+```
+
+
+#### ii. Trends in richness over time for each COMID: 
+
+Visualization:
 
 ```{r, warning=F}
 comid.trends <- ggplot(comid_inverts, aes(y = richness_xbar, x = yr, color = factor(COMID)))+
@@ -125,12 +344,374 @@ comid.trends <- ggplot(comid_inverts, aes(y = richness_xbar, x = yr, color = fac
 comid.trends
 ```
 
+No obvious differences from site-by-site data - both increasing and decreasing trends at different sites. 
+
 Save: 
 
 ```{r}
 ggsave("plots/comid_richness_trends.jpg", comid.trends, device = "jpeg", height = 8.5, width = 8.5, units = "in", dpi = "retina")
 ```
 
+#### iii. Trends in richness across all COMID's:
+
+Visualization:
+
+```{r}
+comid.overall <- ggplot(filter(comid_inverts, yr >=1990), aes(y = richness_xbar, x = yr))+
+  geom_point(size = 0.5)+
+  geom_smooth(se = F, method = "lm", size = 0.5)+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text = element_text(), 
+        )+
+  labs(x = "Year", 
+       y = "Mean Richness")
+comid.overall
+```
+
+Basic LM: 
+
+```{r}
+comid.overall.lm <- lm(richness_xbar~yr, filter(comid_inverts, yr >=1990))
+summary(comid.overall.lm)
+```
+
+Significant *increase* in richness across all COMID's (same trend as site-by-site data)
+
+#### iv. Trends in overall richness (averaged across all sites):
+
+Calculate yearly average richness, abundance, & density:
+
+```{r}
+yr_comid_avgs <- comid_inverts %>%
+  filter(!yr <1990)%>% #remove obs from the 60's
+  group_by(yr)%>% #group by year
+  summarise(
+    richness_xbar = mean(richness_xbar), #calculate avg richness, abundance, and density across all sites for each year
+    abund_xbar = mean(abund_xbar), 
+    density_xbar = mean(density_xbar)
+  )
+```
+
+Visualization: 
+
+```{r}
+comid.yr.overall <- ggplot(yr_comid_avgs, aes(y = richness_xbar, x = yr))+
+  geom_point(size = 0.5)+
+  geom_smooth(se = T,  size = 0.5)+
+  geom_smooth(se = F, method = "lm", size = 0.5, color = "Red", linetype = "dashed")+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text = element_text(), 
+        )+
+  labs(x = "Year", 
+       y = "Mean Richness")
+comid.yr.overall
+```
+
+Basic LM: 
+
+```{r}
+comid.yr.lm <- lm(richness_xbar~yr, yr_comid_avgs)
+summary(comid.yr.lm)
+```
+
+Significant *increase* in richness across all COMIDs over time (same result as site-by-site data)
+
+#### v. Trends in density for each COMID: 
+
+Visualization:
+
+```{r, warning=F}
+comid.density <- ggplot(comid_inverts, aes(y = log10(density_xbar), x = yr, color = factor(COMID)))+
+  geom_point(size = 0.5)+
+  geom_smooth(se = F, method = "lm", size = 0.5)+
+  theme_classic()+
+  facet_wrap(~factor(COMID), scales = "free")+
+  theme(legend.position = "none", 
+        strip.text = element_blank(),
+        strip.background = element_blank(), 
+        axis.text = element_blank(), 
+        axis.ticks = element_blank())+
+  labs(x = "Year", 
+       y = "log10(Mean Total Density)")
+comid.density
+```
+
+No obvious trends stand out - variety of responses at different COMIDs. 
+
+#### vi. Trends in density across all sites:
+
+Visualization:
+
+```{r}
+comid.dens.overall <- ggplot(filter(comid_inverts, yr >=1990), aes(y = log10(density_xbar), x = yr))+
+  geom_point(size = 0.5)+
+  geom_smooth(se = F, method = "lm", size = 0.5)+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text = element_text(), 
+        )+
+  labs(x = "Year", 
+       y = "log10(Mean Total Density)")
+comid.dens.overall
+```
+
+Basic LM: 
+
+```{r}
+comid.dens.lm <- lm(log10(density_xbar)~yr, comid_inverts)
+summary(comid.dens.lm)
+```
+
+No change in density over time (same finding as site-by-site)
+
+#### vii. Trends in overall density (averaged across all sites)
+
+Visualization: 
+
+```{r}
+comid.yr.dens <- ggplot(yr_comid_avgs, aes(y = log10(density_xbar), x = yr))+
+  geom_point(size = 0.5)+
+  geom_smooth(se = T,  size = 0.5)+
+  geom_smooth(se = F, method = "lm", size = 0.5, color = "Red", linetype = "dashed")+
+  theme_classic()+
+  theme(legend.position = "none",
+        axis.text = element_text(), 
+        )+
+  labs(x = "Year", 
+       y = "log10(Mean Total Density)")
+comid.yr.dens
+```
+
+Basic LM: 
+
+```{r}
+comid.yr.dens <- lm(log10(density_xbar)~yr, yr_comid_avgs)
+summary(comid.yr.dens)
+```
+
+No change in density over time (same finding as site-by-site)
+
+## II. Checking taxa of interest
+
+### A. *Pteronarcys californica*
+
+First, extract all observations of *P. californica* into a new dataframe:
+
+```{r}
+p_cal <- taxa_densities%>%
+  filter(scientificName == "Pteronarcys californica", 
+         !splitCount == 0) #dropping samples where 0 individuals were counted
+```
+
+#### i. How is density changing over time across all sites? 
+
+Visualization:
+
+```{r}
+ggplot(p_cal, aes(x = sampleDate, y = taxa_density))+
+  geom_point(size = 0.5)+
+  geom_smooth(size = 0.5)+
+  geom_smooth(se = F, method = "lm", color = "Red", linetype = "dashed")+
+  theme_classic()+
+  labs(x = "Sample Date", y = "P. Californica Density (individuals/m2)")
+```
+
+Basic LM: 
+
+```{r}
+pcal.dens.lm <- lm(taxa_density~sampleDate, p_cal)
+summary(pcal.dens.lm)
+```
+
+Non-significant decrease in *P. californica* density over time (ignoring effects of site, etc.)
+
+#### ii. Is prevalence (# sites w/ P. calif. per year) changing over time? 
+
+Calculate # unique sites with *P. calif.* each year: 
+
+```{r}
+pCal_yrs <- p_cal%>%
+  mutate(yr = year(sampleDate))%>% #create new column with year
+  group_by(yr)%>% #group by year
+  summarise(density_xbar = mean(taxa_density), #calculate mean density, # sites with P. Cal., and total abundance for each year
+            n_sites = length(unique(siteId)), 
+            tot_abund = sum(splitCount))
+```
+
+Visualization: 
+
+```{r}
+ggplot(pCal_yrs, aes(x = yr, y = n_sites))+
+  geom_point()+
+  geom_smooth(method = lm, se = F, size = 0.5, linetype = "dashed", color = "Red")+
+  geom_smooth(size = 0.5)+
+  theme_classic()+
+  labs(x = "Year", y = "Number of sites with P. californica present")
+```
+
+Basic LM: 
+
+```{r}
+pcal.site.lm <- lm(n_sites~yr, pCal_yrs)
+summary(pcal.site.lm)
+```
+
+Non-significant decline in # sites with *P. californica* present over time. 
+
+#### iii. Is total abundance changing over time? 
+
+Visualization: 
+
+```{r}
+ggplot(pCal_yrs, aes(x = yr, y = tot_abund))+
+  geom_point()+
+  geom_smooth(method = lm, se = F, size = 0.5, linetype = "dashed", color = "Red")+
+  geom_smooth(size = 0.5)+
+  theme_classic()+
+  labs(x = "Year", y = "Total P. californica abundance")
+```
+
+No obvious trends in total abundance over time. 
+
+#### iv. Is mean density changing over time? 
+
+```{r}
+ggplot(pCal_yrs, aes(x = yr, y = density_xbar))+
+  geom_point()+
+  geom_smooth(method = lm, se = F, size = 0.5, linetype = "dashed", color = "Red")+
+  geom_smooth(size = 0.5)+
+  theme_classic()+
+  labs(x = "Year", y = "Average P. californica density (# individuals/m2)")
+```
+
+Basic LM: 
+
+```{r}
+pcal.dens.yr <- lm(density_xbar~yr, pCal_yrs)
+
+summary(pcal.dens.yr)
+```
+
+Significant *decrease* in mean density over time - When averaged across all sites with *P. californica* observations, density (# individuals/m2) has decreased between 2000 and 2023. 
+
+### B. *Zapada*
+
+First, extract all observations of *Zapada* into a new dataframe:
+
+```{r}
+zapada <- taxa_densities%>%
+  filter(sampleDate > "1990-01-01")%>% #dropping observations before 1990
+  filter(genus == "Zapada", 
+         !splitCount == 0) #dropping samples where 0 individuals were counted
+```
+
+Check Distribution: 
+
+```{r}
+ggplot(zapada, aes(x = log10(taxa_density)))+
+  geom_histogram()
+```
+
+Strong left skew - use log transform. 
+
+#### i. How is density changing over time across all sites? 
 
 
+Visualization:
+
+```{r}
+ggplot(zapada, aes(x = sampleDate, y = log10(taxa_density)))+
+  geom_point(size = 0.5)+
+  geom_smooth(size = 0.5)+
+  geom_smooth(se = F, method = "lm", color = "Red", linetype = "dashed")+
+  theme_classic()+
+  labs(x = "Sample Date", y = "log10(Zapada Density (individuals/m2))")
+```
+
+Basic LM: 
+
+```{r}
+zap.dens.lm <- lm(log10(taxa_density)~sampleDate, zapada)
+summary(zap.dens.lm)
+```
+
+Significant *decrease* in *P. californica* density over time (ignoring effects of site, etc.)
+
+#### ii. Is prevalence (# sites w/ Zapada per year) changing over time? 
+
+Calculate # unique sites with *Zapada* each year: 
+
+```{r}
+zapada_yrs <- zapada%>%
+  mutate(yr = year(sampleDate))%>% #create new column with year
+  group_by(yr)%>% #group by year
+  summarise(density_xbar = mean(taxa_density), #calculate mean density, # sites with P. Cal., and total abundance for each year
+            n_sites = length(unique(siteId)), 
+            tot_abund = sum(splitCount))
+```
+
+Visualization: 
+
+```{r}
+ggplot(zapada_yrs, aes(x = yr, y = n_sites))+
+  geom_point()+
+  geom_smooth(method = lm, se = F, size = 0.5, linetype = "dashed", color = "Red")+
+  geom_smooth(size = 0.5)+
+  theme_classic()+
+  labs(x = "Year", y = "Number of sites with Zapada present")
+```
+
+Basic LM: 
+
+```{r}
+zap.site.lm <- lm(n_sites~yr, zapada_yrs)
+summary(zap.site.lm)
+```
+
+No change in # sites with *Zapada* present over time.  
+
+#### iii. Is total abundance changing over time? 
+
+Visualization: 
+
+```{r}
+ggplot(zapada_yrs, aes(x = yr, y = tot_abund))+
+  geom_point()+
+  geom_smooth(method = lm, se = F, size = 0.5, linetype = "dashed", color = "Red")+
+  geom_smooth(size = 0.5)+
+  theme_classic()+
+  labs(x = "Year", y = "Total Zapada abundance")
+```
+
+Basic LM: 
+
+```{r}
+zap.abund.lm <- lm(tot_abund~yr, zapada_yrs)
+summary(zap.abund.lm)
+```
+
+No change in Zapada abundance over time. 
+
+#### iv. Is mean density changing over time? 
+
+```{r}
+ggplot(zapada_yrs, aes(x = yr, y = density_xbar))+
+  geom_point()+
+  geom_smooth(method = lm, se = F, size = 0.5, linetype = "dashed", color = "Red")+
+  geom_smooth(size = 0.5)+
+  theme_classic()+
+  labs(x = "Year", y = "Average Zapada density (# individuals/m2)")
+```
+
+Basic LM: 
+
+```{r}
+zap.dens.yr <- lm(density_xbar~yr, zapada_yrs)
+
+summary(zap.dens.yr)
+```
+
+Significant *decrease* in mean density over time - When averaged across all sites with *Zapada* observations, density (# individuals/m2) has decreased between 2000 and 2023. 
 
