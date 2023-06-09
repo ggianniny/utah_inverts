@@ -17,6 +17,12 @@ library(stringr)
 library(vegan)
 library(broom)
 library(sp)
+library(maps) #mapping with ggplot2
+library(ggmap) #for mapping w/google map basemaps
+
+#setting up ggmap API key: 
+GOOGLEMAPS_API_KEY <- "AIzaSyAWkDtYS-cc_ziVfJIReObeHLX39pYWWq8"
+register_google(key = GOOGLEMAPS_API_KEY)
 ```
 
 ## Overview
@@ -31,19 +37,19 @@ This document carries out all analysis for the Utah Aquatic Insect Decline proje
 
 Sections are: 
 
-I. Initial data visualizations & basic analysis
+1. Initial data visualizations & basic analysis
 
-    A. By Site: Checking distribution, examining trends in richness & density over time (site-by-site & overall) 
+* By Site: Checking distribution, examining trends in richness & density over time (site-by-site & overall) 
     
-    B. By COMID: Checking distribution, examining trends in richness & density over time (site-by-site & overall) 
+* By COMID: Checking distribution, examining trends in richness & density over time (site-by-site & overall)
 
-II. Taxa of interest
+2. Taxa of interest
 
-    A. Pteronarcys californica
+* Pteronarcys californica
     
-    B. Zapada
+* Zapada
 
-III. Mixed Modeling
+3. Effects of sampling design (lab split, field split, area sampled) on total sample density
 
 Read in datafiles: 
 
@@ -236,6 +242,10 @@ site.elev.dens
 ```
 
 Similar to richness - some sites increasing, others decreasing. No obvious/consistent patterns across elevations. 
+
+
+
+**Try making a map color coded by site trend?**
 
 #### vi. Trends in density across all sites: 
 
@@ -495,6 +505,15 @@ No change in density over time (same finding as site-by-site)
 
 ## II. Checking taxa of interest
 
+Taxa of interest/concern present in the dataset include: 
+
+* *Pteronarcys californica*
+
+* *Zapada* (esp. high elevation)
+
+* SGCNs from Utah, Idaho, Wyoming, Colorado, Arizona, and Nevada
+
+
 ### A. *Pteronarcys californica*
 
 First, extract all observations of *P. californica* into a new dataframe:
@@ -527,7 +546,7 @@ summary(pcal.dens.lm)
 
 Non-significant decrease in *P. californica* density over time (ignoring effects of site, etc.)
 
-#### ii. Is prevalence (# sites w/ P. calif. per year) changing over time? 
+#### ii. Is prevalence (proportion of sites w/ P. calif. per year) changing over time? 
 
 Calculate # unique sites with *P. calif.* each year: 
 
@@ -540,25 +559,41 @@ pCal_yrs <- p_cal%>%
             tot_abund = sum(splitCount))
 ```
 
+Add total sites each year and calculate % of sites w/ *P. cali.*: 
+
+```{r}
+# Calculate total sites per year:
+sites <- taxa_densities%>%
+  mutate(yr = year(sampleDate))%>% #Add year colum
+  group_by(yr)%>% #group by year
+  summarise(total_sites = length(unique(siteId))) #count # unique siteId's per year
+
+#Merge with P cali data, calculate % sites with P. calif. each year: 
+
+pCal_yrs <- merge(pCal_yrs, sites)%>%
+  mutate(site_perc = (n_sites/total_sites)*100)
+```
+
+
 Visualization: 
 
 ```{r}
-ggplot(pCal_yrs, aes(x = yr, y = n_sites))+
+ggplot(pCal_yrs, aes(x = yr, y = site_perc))+
   geom_point()+
   geom_smooth(method = lm, se = F, size = 0.5, linetype = "dashed", color = "Red")+
   geom_smooth(size = 0.5)+
   theme_classic()+
-  labs(x = "Year", y = "Number of sites with P. californica present")
+  labs(x = "Year", y = "% of sites with P. californica present")
 ```
 
 Basic LM: 
 
 ```{r}
-pcal.site.lm <- lm(n_sites~yr, pCal_yrs)
+pcal.site.lm <- lm(site_perc~yr, pCal_yrs)
 summary(pcal.site.lm)
 ```
 
-Non-significant decline in # sites with *P. californica* present over time. 
+No change in # sites with *P. californica* present over time. 
 
 #### iii. Is total abundance changing over time? 
 
@@ -582,6 +617,7 @@ ggplot(pCal_yrs, aes(x = yr, y = density_xbar))+
   geom_point()+
   geom_smooth(method = lm, se = F, size = 0.5, linetype = "dashed", color = "Red")+
   geom_smooth(size = 0.5)+
+  annotate(geom = "label", x = 2019, y = 80, label = "P = 0.035; R2 = 0.30")+
   theme_classic()+
   labs(x = "Year", y = "Average P. californica density (# individuals/m2)")
 ```
@@ -639,9 +675,9 @@ summary(zap.dens.lm)
 
 Significant *decrease* in *P. californica* density over time (ignoring effects of site, etc.)
 
-#### ii. Is prevalence (# sites w/ Zapada per year) changing over time? 
+#### ii. Is prevalence (% sites w/ Zapada per year) changing over time? 
 
-Calculate # unique sites with *Zapada* each year: 
+Calculate # unique sites with *Zapada* each year:
 
 ```{r}
 zapada_yrs <- zapada%>%
@@ -652,10 +688,18 @@ zapada_yrs <- zapada%>%
             tot_abund = sum(splitCount))
 ```
 
+Add total # sites per year and calculate %: 
+
+```{r}
+zapada_yrs <- merge(zapada_yrs, sites)%>%
+  mutate(site_perc = (n_sites/total_sites)*100)
+```
+
+
 Visualization: 
 
 ```{r}
-ggplot(zapada_yrs, aes(x = yr, y = n_sites))+
+ggplot(zapada_yrs, aes(x = yr, y = site_perc))+
   geom_point()+
   geom_smooth(method = lm, se = F, size = 0.5, linetype = "dashed", color = "Red")+
   geom_smooth(size = 0.5)+
@@ -666,11 +710,11 @@ ggplot(zapada_yrs, aes(x = yr, y = n_sites))+
 Basic LM: 
 
 ```{r}
-zap.site.lm <- lm(n_sites~yr, zapada_yrs)
+zap.site.lm <- lm(site_perc~yr, zapada_yrs)
 summary(zap.site.lm)
 ```
 
-No change in # sites with *Zapada* present over time.  
+No change in % of sites with *Zapada* present over time.  
 
 #### iii. Is total abundance changing over time? 
 
@@ -701,6 +745,7 @@ ggplot(zapada_yrs, aes(x = yr, y = density_xbar))+
   geom_point()+
   geom_smooth(method = lm, se = F, size = 0.5, linetype = "dashed", color = "Red")+
   geom_smooth(size = 0.5)+
+  annotate(geom = "label", x = 2019, y = 750, label = "P = 0.036, R2 = 0.15")+
   theme_classic()+
   labs(x = "Year", y = "Average Zapada density (# individuals/m2)")
 ```
@@ -714,4 +759,379 @@ summary(zap.dens.yr)
 ```
 
 Significant *decrease* in mean density over time - When averaged across all sites with *Zapada* observations, density (# individuals/m2) has decreased between 2000 and 2023. 
+
+#### v. Zapada above 3000m: 
+
+First, select all sites with elevation >=3000m from zapada dataframe:
+
+```{r}
+zapada_hi <- zapada %>% 
+  filter(elev_m >=3000)
+
+length(unique(zapada_hi$siteId))
+```
+
+Only 3 sites above 3000m - probably can't do much with that. 
+
+Alternative: identify 10 highest sites, extract data from only those sites:
+
+```{r}
+zap_hiSites <- zapada %>%
+  select(siteId, siteLongitude, siteLatitude,elev_m)%>% #select site and elevation cols
+  distinct()%>% #remove duplicates
+  arrange(desc(elev_m))%>% #sort by elevation, largest to smallest
+  slice(1:10) #extract first 10 sites
+
+zap_hi10 <- zapada %>%
+  filter(siteId%in%zap_hiSites$siteId) #create new dataframe with Zapada data from 10 highest sites
+```
+
+Check distribution of density at these sites: 
+
+```{r}
+ggplot(zap_hi10, aes(x = log10(taxa_density)))+
+  geom_histogram()
+```
+
+Strong left skew, use log transform. 
+
+**Is density changing at these sites?** 
+
+```{r}
+ggplot(zap_hi10, aes(x = sampleDate, y = log10(taxa_density)))+
+  geom_point(size = 0.5)+
+  #geom_smooth(size = 0.5)+
+  geom_smooth(se = F, method = "lm", color = "Red", linetype = "dashed")+
+  theme_classic()+
+  labs(x = "Sample Date", y = "Zapada Density (individuals/m2)")
+```
+
+No clear trends. 
+
+**Are there trends in prevalence, total abundance, or mean density over time?**
+
+Calculate number of sites w/ high elevation Zapada per year, mean density and total abundance per year:
+
+```{r}
+zapHi_yrs <- zap_hi10%>%
+  mutate(yr = year(sampleDate))%>% #create new column with year
+  group_by(yr)%>% #group by year
+  summarise(density_xbar = mean(taxa_density), #calculate mean density, # sites with P. Cal., and total abundance for each year
+            n_sites = length(unique(siteId)), 
+            tot_abund = sum(splitCount))
+```
+
+Add total sites each year and calculate % of sites w/ *Zapada*: 
+
+```{r}
+zapHi_yrs_pivot <- merge(zapHi_yrs, sites)%>% #merge with site numbers calculated above
+  mutate(site_perc = (n_sites/total_sites)*100)%>% #calculate % sites w/ high elevation zapada
+  pivot_longer(!yr, names_to = "measure", values_to = "value")%>% #pivot longer for plotting
+  filter(!measure == "n_sites", !measure == "total_sites")
+```
+
+Visualization: 
+
+```{r}
+ggplot(zapHi_yrs_pivot, aes(x = yr, y = value, color = measure))+
+  geom_point(size = 0.5)+
+  geom_smooth(size = 0.5)+
+  geom_smooth(se = F, method = "lm", linetype = "dashed")+
+  theme_classic()+
+  facet_wrap(~measure, scales = "free")+
+  labs(x = "Sample Date", y = "")+
+  theme(legend.position = "none")
+```
+
+LM for density: 
+
+```{r}
+zapHi.dens.lm <- lm(density_xbar ~ yr, zapHi_yrs)
+summary(zapHi.dens.lm)
+```
+
+No Significant trends. 
+
+#### vi. Map of the 10 highest zapada sites
+
+First, get map data for Utah: 
+
+```{r}
+utah <- map_data("state", region = "utah") #state polygon
+ut.counties <- map_data("county", region = "utah") #county polygons
+```
+
+Make map of Utah with the 10 highest Zapada sites marked: 
+
+```{r}
+zap.map <- ggmap(get_map(c(-111.950684,39.419220), source = "stamen", zoom = 7, maptype = "terrain-background"))+ #basemap: terrain background (no labels) from google maps platform console, centered on UT centroid
+  geom_polygon(data = ut.counties, aes(x = long, y = lat, group = group), color = "black", fill = "white", size = 0.5, alpha = 0.0, linetype = "dotted")+ #add counties to map, use dotted lines
+  geom_polygon(data = utah, aes(x = long, y = lat, group = group), color = "black", fill = "white", alpha = 0.0)+ #add state outline to map, use solid line
+  geom_point(data = zap_hiSites, aes(x = siteLongitude, y = siteLatitude, color = elev_m, group = NULL), size = 4, pch = 20)+ #add zapada sites, color code by elevation. 
+  labs(color = "Site elevation (m)", title = "10 highest sites with Zapada")+ #updating legend title
+  annotate(geom = "text", x = -111.8, y = 39, label = "Utah", size = 6, fontface = 4, color = "black", alpha = 0.75)+ #add "Utah" label to center of map
+  scale_color_gradient(low = "#DCB0FC", high = "#7004BF")+ #setting color gradient for site colors
+  theme_void()+ #removing lat/long from x and y axes 
+  theme(legend.title = element_text(size = 10, face = "bold"), #adjusting legend title/text/plot title size, face, and position
+        legend.text = element_text(size = 10), 
+        legend.position = "right", 
+        plot.title = element_text(size = 12, face = "bold", hjust = 0.5) 
+        )
+zap.map
+```
+
+Save this plot: 
+
+```{r}
+ggsave("plots/zapada_map.pdf", zap.map, device = "pdf", units = "in", width = 6.5, height = 4.5, dpi = "retina")
+```
+
+
+
+### C.  SGCNs from Utah and surrounding states
+
+First, extract all observations of *P. pilsbryana*:
+
+```{r}
+pPils <- taxa_densities%>%
+  filter(scientificName == "Pyrgulopsis pilsbryana")
+```
+
+Only 2 observations of *P. pilsbryana* at 2 different sites. Where are these sites? 
+
+```{r}
+pPils.map <- ggmap(get_map(c(-111.950684,39.419220), source = "stamen", zoom = 7, maptype = "terrain-background"))+ #basemap: terrain background (no labels) from google maps platform console, centered on UT centroid
+  geom_polygon(data = ut.counties, aes(x = long, y = lat, group = group), color = "black", fill = "white", size = 0.5, alpha = 0.0, linetype = "dotted")+ #add counties to map, use dotted lines
+  geom_polygon(data = utah, aes(x = long, y = lat, group = group), color = "black", fill = "white", alpha = 0.0)+ #add state outline to map, use solid line
+  geom_point(data = pPils, aes(x = siteLongitude, y = siteLatitude, group = NULL), size = 4, color = "red", pch = 20)+ #add zapada sites, color code by elevation. 
+  labs(color = "Site elevation (m)", title = "Sites with P. pilsbryana")+ #updating legend title
+  annotate(geom = "text", x = -111.8, y = 39, label = "Utah", size = 6, fontface = 4, color = "black", alpha = 0.75)+ #add "Utah" label to center of map
+  theme_void()+ #removing lat/long from x and y axes 
+  theme(
+        plot.title = element_text(size = 12, face = "bold", hjust = 0.5) 
+        )
+pPils.map
+```
+
+Any temporal trends in density? 
+
+```{r}
+ggplot(pPils, aes(x = sampleDate, y = log10(taxa_density)))+
+  geom_point(size = 0.5)+
+  #geom_smooth(size = 0.5)+
+  geom_smooth(se = F, method = "lm", color = "Red", linetype = "dashed")+
+  theme_classic()+
+  labs(x = "Sample Date", y = "P. pilsbryana density (individuals/m2)")
+```
+
+Only 2 observations, so hard to say. 
+
+### D. *Pyrgulopsis saxatilis* (Sub-globose Snake Pyrg)
+
+First, extract all observations of *P. saxatilis*:
+
+```{r}
+pSax <- taxa_densities%>%
+  filter(scientificName == "Pyrgulopsis saxatilis")
+
+unique(pSax$siteId)
+```
+
+15 observations of *P. saxatilis* at 4 different sites. Where are these sites? 
+
+```{r}
+pSax.map <- ggmap(get_map(c(-111.950684,39.419220), source = "stamen", zoom = 7, maptype = "terrain-background"))+ #basemap: terrain background (no labels) from google maps platform console, centered on UT centroid
+  geom_polygon(data = ut.counties, aes(x = long, y = lat, group = group), color = "black", fill = "white", size = 0.5, alpha = 0.0, linetype = "dotted")+ #add counties to map, use dotted lines
+  geom_polygon(data = utah, aes(x = long, y = lat, group = group), color = "black", fill = "white", alpha = 0.0)+ #add state outline to map, use solid line
+  geom_point(data = pSax, aes(x = siteLongitude, y = siteLatitude, group = NULL), size = 4, color = "red", pch = 20)+ #add zapada sites, color code by elevation. 
+  labs(color = "Site elevation (m)", title = "Sites with P. saxatilis")+ #updating legend title
+  annotate(geom = "text", x = -111.8, y = 39, label = "Utah", size = 6, fontface = 4, color = "black", alpha = 0.75)+ #add "Utah" label to center of map
+  theme_void()+ #removing lat/long from x and y axes 
+  theme(
+        plot.title = element_text(size = 12, face = "bold", hjust = 0.5) 
+        )
+pSax.map
+```
+
+Check for temporal trends in density: 
+
+```{r}
+ggplot(pSax, aes(x = sampleDate, y = log10(taxa_density)))+
+  geom_point(size = 0.5)+
+  #geom_smooth(size = 0.5)+
+  geom_smooth(se = F, method = "lm", color = "Red", linetype = "dashed")+
+  theme_classic()+
+  labs(x = "Sample Date", y = "P. saxatilis Density (individuals/m2)")
+```
+
+Possibly a positive trend in density - what about average density for each year? 
+
+Calculate mean yearly density: 
+
+```{r}
+pSax_yrs <- pSax %>%
+  mutate(yr = year(sampleDate))%>% #add year column
+  group_by(yr)%>% #group by year
+  summarise(density_xbar = mean(taxa_density), #calculate mean density
+            tot_abund = sum(splitCount)) #calculate total abundance
+```
+
+Plotting:
+
+```{r}
+pSax.density <- ggplot(pSax_yrs, aes(x = yr, y = density_xbar))+
+  geom_point(size = 0.5)+
+  #geom_smooth(size = 0.5)+
+  geom_smooth(se = F, method = "lm", color = "Red", linetype = "dashed")+
+  theme_classic()+
+  labs(x = "Sample Date", y = "P. saxatilis Density (individuals/m2)")
+pSax.density
+```
+
+Increase in density overtime, but probably not enough data to determine if significant. 
+
+
+**Figure idea: Maps + density trends for species of concern**
+
+## III. Effects of sampling design (lab split, field split, area sampled) on total sample density
+
+First, need to calculate total density in each sample: 
+
+```{r}
+total_dens <- taxa_densities%>%
+  group_by(sampleId)%>% # group by sample ID
+  summarise(labSplit = mean(labSplit), #Add sample lab split, field split, and area
+            fieldSplit = mean(fieldSplit), 
+            tot_dens = sum(taxa_density), # calculate total density in sample
+            area = mean(area))%>%
+  mutate(sample_prop = labSplit*fieldSplit) #calculate sample proportion (labSplit*fieldSplit)
+```
+
+### A. Density vs. LabSplit: 
+
+Basic plot:
+
+```{r}
+dens.labsplit <- ggplot(filter(total_dens, !labSplit == 1), aes(x = labSplit, y = tot_dens))+
+  geom_point(size = 0.5, alpha = 0.5)+
+  geom_smooth(size = 0.5, color = "Red", linetype = "dashed")+
+  theme_classic()+
+  labs(y = "Total Sample Density", x = "")
+dens.labsplit
+```
+
+
+Log transformed plot: 
+
+```{r}
+dens.labsplit.log <- ggplot(total_dens, aes(x = labSplit, y = log10(tot_dens)))+
+  geom_point(size = 0.5, alpha = 0.5)+
+  geom_smooth(size = 0.5, color = "Red", linetype = "dashed", method = "lm")+
+  annotate(geom = "label", x = 0.5, y = 0.2, label = "P <0.001; R2 = 0.55")+
+  theme_classic()+
+  labs(y = "log10(Total Sample Density)", x = "Lab Split Proportion")
+dens.labsplit.log
+```
+
+Basic LM: 
+
+```{r}
+dens.ls.lm <- lm(log10(tot_dens)~labSplit, filter(total_dens, labSplit >=0.25, !labSplit == 1))
+summary(dens.ls.lm)
+```
+
+Significant negative relationship between lab split and total sample density. 
+
+
+
+### B. Density vs. Sample Proportion (lab split * field split): 
+
+Basic plot:
+
+```{r}
+dens.sampleprop <- ggplot(total_dens, aes(x = sample_prop, y = tot_dens))+
+  geom_point(size = 0.5, alpha = 0.5)+
+  geom_smooth(size = 0.5, color = "Red", linetype = "dashed")+
+  theme_classic()+
+  labs(y = "", x = "")
+dens.sampleprop
+```
+
+
+Log transformed plot: 
+
+```{r}
+dens.sampleprop.log <- ggplot(total_dens, aes(x = sample_prop, y = log10(tot_dens)))+
+  geom_point(size = 0.5, alpha = 0.5)+
+  geom_smooth(size = 0.5, color = "Red", linetype = "dashed", method = "lm")+
+  annotate(geom = "label", x = 0.5, y = 0.2, label = "P <0.001; R2 = 0.55")+
+  theme_classic()+
+  labs(y = "", x = "Sample Proportion")
+dens.sampleprop.log
+```
+
+Basic LM: 
+
+```{r}
+dens.sp.lm <- lm(log10(tot_dens)~sample_prop, total_dens)
+summary(dens.sp.lm)
+```
+
+Significant negative relationship between sample proportion and total sample density. 
+
+
+### C. Sample Area
+
+Basic plot:
+
+```{r}
+dens.area <- ggplot(filter(total_dens, area <50), aes(x = area, y = tot_dens))+
+  geom_point(size = 0.5, alpha = 0.5)+
+  geom_smooth(size = 0.5, color = "Red", linetype = "dashed")+
+  theme_classic()+
+  labs(y = "", x = "")
+dens.area
+```
+
+Log transformed plot: 
+
+```{r}
+dens.area.log <- ggplot(filter(total_dens, area <50), aes(x = area, y = log10(tot_dens)))+
+  geom_point(size = 0.5, alpha = 0.5)+
+  geom_smooth(size = 0.5, color = "Red", linetype = "dashed", method = "lm")+
+  annotate(geom = "label", x = 1.75, y = 0.1, label = "P <0.001; R2 = 0.10")+
+  theme_classic()+
+  labs(y = "", x = "Sample area, m2")
+dens.area.log
+```
+
+Basic LM: 
+
+```{r}
+dens.ar.lm <- lm(log10(tot_dens)~area, filter(total_dens, area <50))
+summary(dens.ar.lm)
+```
+
+Significant negative relationship between sample proportion and total sample density. 
+
+
+
+### D. Create summary figure of all three:
+
+```{r, message = F, warning = F}
+dens.samplemethod <- (dens.labsplit/dens.labsplit.log)|(dens.sampleprop/dens.sampleprop.log)|(dens.area/dens.area.log)
+dens.samplemethod
+```
+
+Save:
+
+```{r}
+ggsave("plots/dens_samplemethod.pdf", dens.samplemethod, device = "pdf", units = "in", height = 6.5, width = 9, dpi = "retina")
+```
+
+##### **Summary:**
+
+log10(Density) has a significant negative correlation with lab split, sample proportion (lab split * field split), and area. The R2 for lab split and sample proportion are fairly hight (0.55), while the R2 for area is very low (0.1). 
+
+
 

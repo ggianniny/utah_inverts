@@ -137,7 +137,7 @@ Save this dataframe:
 write.csv(taxa_meta, "raw_data/ut_metadata_taxa_combined.csv")
 ```
 
-### 2. Accounting for differences in lab split, sampling methods, etc. 
+### 2. Accounting for differences/checking accuracy in lab split, sampling methods, area, etc. 
 
 #### A. Lab Split - what's the range? Do we need a cutoff? 
 
@@ -150,7 +150,7 @@ summary(taxa_meta$labSplit)
 Looks like there are a fair number of low lab splits, including some zeros - plotting: 
 
 ```{r}
-labsplit.hist <- ggplot(taxa_meta, aes(x = labSplit))+ #x axis = labSplit
+labsplit.hist <- ggplot(metadata, aes(x = labSplit))+ #x axis = labSplit
   geom_histogram(color = "Black", fill = "Grey", bins = 70)+ 
   theme_classic()+
   geom_vline(xintercept = 0.055, linetype = "dashed", color = "Red")+ #add vertical line at 0.055 (cutoff used in Rumschlag et al.)
@@ -160,11 +160,74 @@ labsplit.hist
 
 `r round((nrow(filter(metadata, labSplit < 0.055))/nrow(metadata))*100, 2)` percent of samples (n = `r nrow(filter(metadata, labSplit < 0.055))`) are below the 0.055 cutoff from Rumschlag et al (dashed red line). 
 
+
+##### i. How many individuals are in the samples with lab split == 1? 
+
+First, extract samples with labsplit == 1 and calculate total sample abundance:
+
+```{r}
+ls1 <- taxa_meta %>%
+  filter(labSplit == 1)%>% #extract rows w/ labsplit = 1
+  group_by(sampleId)%>% #group by sample ID
+  summarise(sample_abund = sum(splitCount)) #calculate total abundance for each sample
+```
+
+Basic summary:
+
+```{r}
+summary(ls1$sample_abund)
+```
+
+Histogram: 
+
+```{r}
+ls1.hist <- ggplot(ls1, aes(x = sample_abund))+
+  geom_histogram(color = "Black", fill = "Grey", bins = 70)+ 
+  theme_classic()+
+  annotate(geom = "label", x = 3000, y = 350, label = "Min = 1, Mean = 310, Max = 5,942")+
+   annotate(geom = "label", x = 3000, y = 300, label = "32 samples w/ >1000 individuals; 11 samples w/ 1 individual")+
+  labs(x = "Total Sample Abundance", y = "Count")
+ls1.hist
+```
+
+Very strong left skew - most samples have fewer than ~1000 individuals. 
+
+```{r}
+length(which(ls1$sample_abund>1000))
+length(which(ls1$sample_abund==1))
+```
+
+Only 32 samples with > 1000 individuals; 11 samples with only 1 individual. 
+
+Save: 
+
+```{r}
+ggsave("plots/ls1_hist.pdf", ls1.hist, device = "pdf", units = "in", height = 5, width = 6.5, dpi = "retina")
+```
+
+##### ii. Applying lab split cutoff:
+
+What are the tradeoffs between # samples and labsplit cutoff? 
+
+Plot showing total # samples on Y, lab split on X. 
+
+```{r}
+n<- nrow(metadata)
+
+ggplot(metadata, aes(x = labSplit))+
+  stat_ecdf(aes(y = (1-after_stat(y))), geom = "line", size = 1, color = "red")+
+  scale_y_continuous("Proportion of samples w/ Lab Split > x", position = "left", sec.axis = sec_axis(name = "# Samples w/ Lab Split > x", trans = ~.x*n))+
+  theme_linedraw()+
+  labs(x ="Lab Split")+
+  geom_vline(xintercept = 0.1, linetype = "dashed")
+  
+```
+
 For now - using the same cutoff as Rumschlag et al: 
 
 ```{r}
 taxa_meta_labsplit <- taxa_meta %>%
-  filter(!labSplit < 0.055) #remove all observations with labSplit < 0.055
+  filter(!labSplit < 0.1) #remove all observations with labSplit < 0.055
 ```
 
 Using this cutoff means we lose `r round(((nrow(taxa_meta)-nrow(taxa_meta_labsplit))/nrow(taxa_meta))*100, 2)` percent of observations (`r nrow(taxa_meta)-nrow(taxa_meta_labsplit)` individual observations). 
@@ -314,19 +377,86 @@ Dashed red line = Genus - all samples with smaller taxonomic ID's are classified
 
 If we just used observations classified to genus or lower, we would lose `r round((nrow(filter(taxa_meta_labsplit, levelId < 23)) / nrow(taxa_meta_labsplit))*100, 2)` percent of the data, leaving  `r nrow(filter(taxa_meta_labsplit, levelId >= 23))` observations remaining. 
 
+#### D. Checking area ranges; removing samples w/out area:
+
+First pass - basic summary of sample area: 
+
+```{r}
+summary(metadata$area)
+```
+
+26 samples missing area, some samples with area of 100? 
+
+Visual check: 
+
+```{r}
+ggplot(metadata, aes(x = area))+
+  geom_histogram(color = "Black", fill = "Grey", bins = 70)+ 
+  theme_classic()+
+  labs(x = "Sample Area, m2", y = "Count")
+```
+
+Six samples have area = 100 - visualization without those six samples:
+
+```{r}
+ggplot(filter(metadata, area <50), aes(x = area))+
+  geom_histogram(color = "Black", fill = "Grey", bins = 70)+ 
+  theme_classic()+
+  labs(x = "Sample Area, m2", y = "Count")
+```
+
+Much more believable. Removing samples with no area and with area == 100 from the dataset: 
+
+```{r}
+taxa_meta_area <- taxa_meta_stage%>%
+  filter(!is.na(area), 
+         !area == 100)
+```
+
+How many samples with area > "x":
+
+```{r}
+n<- nrow(metadata)
+
+ggplot(filter(metadata, area<50), aes(x = area))+
+  stat_ecdf(aes(y = (1-after_stat(y))), geom = "line", size = 1, color = "red")+
+  scale_y_continuous("Proportion of samples w/ Area > x", position = "left", sec.axis = sec_axis(name = "# Samples w/ Area > x", trans = ~.x*n))+
+  theme_linedraw()+
+  labs(x ="Sample Area")+
+  geom_vline(xintercept = 1, linetype = "dashed")+
+  geom_vline(xintercept = 0.08, linetype = "dashed")
+```
+
+
 #### E. Calculate Density: 
 
 Calculate density for each observation - density = (# organisms/(labSplit*fieldSplit))/area sampled
 
 ```{r}
-taxa_meta_density <- taxa_meta_stage %>%
+taxa_meta_density <- taxa_meta_area %>%
   mutate(taxa_density = (splitCount/(labSplit*fieldSplit))/area)
+```
+
+Add site elevations: 
+
+```{r}
+tmd_sites <- taxa_meta_density%>%
+  select(siteId, siteLongitude, siteLatitude)%>%
+  distinct()
+
+elev1 <- elevation(latitude = tmd_sites$siteLatitude, longitude = tmd_sites$siteLongitude, elevation_model = "srtm3", username = "ggianniny")%>% #calculate elevation using the SRTM3 model (uses GeoNames API)
+  mutate(siteId = tmd_sites$siteId)%>% #add siteIDs 
+  rename(elev_m = elevation_geonames)%>% #rename cols for merge
+  select(siteId, elev_m)%>% #drop extra cols for merge
+  distinct() #remove duplicates
+
+taxa_meta_density2 <- merge(taxa_meta_density, elev1, all.x = T) #merge with taxonomic data
 ```
 
 Save this file for future analysis: 
 
 ```{r}
-write.csv(taxa_meta_density, "cleaned_data/taxa_densities.csv")
+write.csv(taxa_meta_density2, "cleaned_data/taxa_densities.csv")
 ```
 
 ### 3. Calculate Richness & Deal with Replicates
@@ -515,7 +645,6 @@ elev <- elevation(latitude = site_yr_longterm$siteLatitude, longitude = site_yr_
   distinct() #remove duplicates
 
 site_yr_longterm2 <- merge(site_yr_longterm, elev) #merge with taxonomic data
-  
 ```
 
 Save: 
@@ -570,6 +699,156 @@ Save:
 write.csv(site_yr_longterm, "cleaned_data/longterm_comid_richness.csv")
 ```
 
+### 5. Identify species of concern; create new dataframe with all SGCNs from UT and surrounding states:
+
+#### A. UT SSGCNs:
+
+Make a list of all invertebrate UT SGCNs (from https://wildlife.utah.gov/pdf/WAP/2022-05-sgcn-list.pdf):
+
+```{r}
+ut.sgcn.list <- c( "Pacifastacus gambelii", "Stygobromus utahensis","Oreohelix yavapai cummingsi", "Fossaria techella","Pyrgulopsis pilsbryana", "Pyrgulopsis peculiaris", "Pyrgulopsis plicata", "Oreohelix parawanensis", "Pyrgulopsis inopinata", "Physa megalochlamys", "Planorbella binneyi", "Gastrocopta quadridens", "Oreohelix peripherica", "Pyrgulopsis deserta", "Tryonia porrecta", "Oreohelix eurekensis", "Stagnicola bonnevillensis", "Fluminicola coloradoensis", "Pyrgulopsis hamlinensis", "Oxyloma kanabense", "Planorbella oregonensis ", "Pyrgulopsis lindahlae", "Pyrgulopsis anguina"," Oreohelix haydeni", "Oreohelix howardi","Vertigo concinnula", "Gastrocopta pilsbryana", "Stagnicola montanensis", "Pyrgulopsis variegata", "Pyrgulopsis nuwuvi", "Pyrgulopsis fusca", "Pyrgulopsis pinetorum", "Pupoides hordaceus", "Colligyrus greggi", "Succinea rusticana", "Pyrgulopsis santaclarensis", "Catinella stretchiana", "Gastrocopta ashmuni", "Pyrgulopsis chamberlini", "Ogaridiscus subrupicola", "Hawaiia neomexicana", "Pyrgulopsis saxatilis", "Vallonia perspectiva", "Pupilla syngenes","Physella utahensis", "Margaritifera falcata", "Physella zionis", "Stagnicola traski", "Anodonta nutalliana") 
+
+ut_sgcn <- taxa_meta_density2 %>%
+ filter(scientificName%in%ut.sgcn.list)%>%
+  mutate(state = rep("UT", nrow(ut_sgcn)))
+
+sort(unique(ut_sgcn$scientificName)) #return list of species present in this dataset. 
+```
+
+Four UT SGCNs present in the dataset. 
+
+#### B. Idaho SGCNs:
+
+Listed at https://www.landcan.org/pdfs/appendixB.pdf  
+
+Make a vector with all ID SGCN scientific names; extract data with those taxa present: 
+
+```{r}
+id.sgcn.list <- c("Caurinella idahoensis","Ametropus ammophilus", "Centroptilum selanderorum", "Capnia zukeli", "Soyedina potteri", "Pictetiella expansa", "Agapetus montanus", "Anodonta californiensis", "Gonidea angulata", "Margaritifera falcata", "Oreohelix waltoni", "Oreohelix vortex", "Oreohelix strigosa goniogyra", "Oreohelix jugalis", "Oreohelix intersum", "Oreohelix idahoensis", "Oreohelix haydeni", "Polygyrella polygyrella", "Cryptomastix populi", "Cryptomastix harfordiana", "Cryptomastix mullani tuckeri", "Cryptomastix mullani latilabris", "Cryptomastix mullani clappi", "Cryptomastix mullani blandi", "Cryptomastix magnidentata", "Allogona ptychophora solida", "Allogona lombardii", "Pristiloma idahoense", "Udosarx lyrata", "Zacoleus idahoensis", "Prophysaon humile", "Hemphillia camelus", "Kootenaia burkei", " Discus marmorensis", "Anguispira nimapuna", "Helicodiscus salmonaceus", "Radiodiscus abietum", "Planogyra clappi", "Physa natricina", "Lanx", "Fisherola nuttalli", "Stagnicola montanensis", "Stagnicola idahoensis", "Stagnicola hinkleyi", "Valvata utahensis", "Taylorconcha serpenticola", "Pristinicola hemphilli", "Pyrgulopsis robusta", "Pyrgulopsis pilsbryana", "Pyrgulopsis bruneauensis", "Fluminicola coloradoensis")
+
+id_sgcn <- taxa_meta_density2%>%
+  filter(scientificName%in%id.sgcn.list)%>%
+  mutate(state = rep("ID", nrow(id_sgcn)))
+
+sort(unique(id_sgcn$scientificName))
+```
+
+5 Idaho SGCNs present in the dataset. 
+
+
+#### C. Wyoming SGCNs:
+
+List of all invertebrate SGCNs downloaded from:
+
+https://wyndd.org/species_list/?wgfd_sgcn=Statewide&wy_occur=Regular%2CIrregular&wy_origin=Native%2CNonnative&res_status=Current&tax_level=Species%2CSubspecies%2FVariety&columns=sciname%2Ccomname%2Csynonyms%2Ctaxgroup%2Ctaxgroup2%2Cblm_wy%2Cg_rank%2Cs_rank%2Cusfws_esa%2Cusfs_sens%2Cusfs_solc%2Cwgfd_sgcn%2Cwy_contrib%2Cwyndd_soc%2Cwy_occur%2Cwy_origin&loc_settings=documentedObs%2Cdist_mod%2Cregular%2Cirregular&servicePrefix=prod_ 
+
+Read in list of all inverts:
+
+```{r}
+wy.sgcn.list <- read.csv("Wyoming_SGCNS.csv", skip = 1)
+```
+
+Make new dataframe with all present in UT: 
+
+```{r}
+wy_sgcn <- taxa_meta_density2 %>%
+  filter(scientificName%in%wy.sgcn.list$Scientific.Name)%>%
+  mutate(state = rep("WY", nrow(wy_sgcn)))
+
+sort(unique(wy_sgcn$scientificName))
+```
+
+11 Wyoming SGCNs present in the dataset
+
+#### D. Colorado SGCNs: 
+
+Make list of Colorado invertebrate SGCNs; filter out of full dataset: 
+
+Mollusks from https://cpw.state.co.us/Documents/WildlifeSpecies/SWAP/CO_SWAP_Chapter2.pdf 
+Invertebrates from https://cpw.state.co.us/Documents/WildlifeSpecies/SWAP/CO_SWAP_FULLVERSION.pdf (Appendix B, table B-1 starting on page B-1)
+
+```{r}
+co.sgcn.list <- c("Ferrissia walker",
+"Promenetus umbillicatellus", "Anodontoides ferussacianus", "Ferrissia fragilis",
+"Physa cupreonitens", "Uniomerus tetralasmus", "Acroloxus coloradensis", "Promenetus exacuous", "Physa gyrina utahensis", "Gumaga griseola", "Ochrotrichia susanae", "Ochrotrichia trapoiza", "Argia alberta", "Calopteryx aequabilis", "Calopteryx maculata", "Cordulegaster dorsalis", "Dromogomphus spoliatus", "Enallagma vesperum", "Epitheca petechialis", "Erpetogomphus compositus", "Erythemis vesiculosa", "Lestes alacer","Leucorrhinia glacialis", "Libellula nodisticta", "Somatochlora ensigera", "Somatochlora hudsonica", "Stylurus intricatus", "Sympetrum madidum","Acentrella parvula","Acerpenna pygmaea", "Ametropus neavei","Apobaetis etowah","Baetis brunneicolor", "Camelobaetidius warreni", "Ephemerella apopsis", "Homoeneuria alleni", "Labiobaetis apache", "Lachlania saskatchewanensis", "Macdunnoa persimplex", "Neochoroterpes oklahoma", "Plauditus cestus","Pseudiron centralis", "Rhithrogena flavianula","Arsapnia arapahoe", "Capnia arapahoe", "Capnia nelsoni","Mesocapnia frisoni", "Pteronarcys californica", "Nemomydas solitarius")
+
+co_sgcn <- taxa_meta_density2%>%
+  filter(scientificName%in%co.sgcn.list)%>%
+  mutate(state = rep("CO", nrow(co_sgcn)))
+
+sort(unique(co_sgcn$scientificName))
+```
+
+9 Colorado SGCNs present in the dataset. 
+
+#### E. Arizona SGCNs
+
+Full list downloaded from: https://awcs.azgfd.com/appendices/appendix-d-species-of-greatest-conservation-need-with-vulnerability-scores 
+
+Read in datafile with all AZ SGCNs, extract invertebrates: 
+
+```{r}
+az.sgcn.list <- read.csv("AZ_SGCNs.csv")%>%
+  filter(Taxonomic.Group == "Invertebrate")
+```
+
+Filter out observations of these taxa from the full dataset: 
+
+```{r}
+az_sgcn <- taxa_meta_density2%>%
+  filter(scientificName%in%az.sgcn.list$Scientific.Name)%>%
+  mutate(state = rep("AZ", nrow(az_sgcn)))
+
+sort(unique(az_sgcn$scientificName))
+```
+
+5 AZ SGCNs in the dataset. 
+
+#### F. Nevada SGCNs: 
+
+Make a list of all Nevada invertebrate SGCNs (from https://www.ndow.org/wp-content/uploads/2022/01/2013-NV-WAP-Complete-NOT-ADA.pdf, table starting on page 73)
+
+```{r}
+nv.sgcn.list <- c("Anodonta californiensis","Tryonia variegata", "Pyrgulopsis pellita", "Pyrgulopsis erythropoma", "Pyrgulopsis peculiaris", "Pyrgulopsis papillata", "Pyrgulopsis coloradensis", "Pyrgulopsis lata", "Pyrgulopsis montana", "Pyrgulopsis fausta", "Pyrgulopsis crystalis", "Pyrgulopsis nanus", "Pyrgulopsis dixensis", "Pyrgulopsis aloba", "Pyrgulopsis villacampae", "Pyrgulopsis leporina", "Pyrgulopsis augustae", "Pyrgulopsis notidicola", "Pyrgulopsis isolata", "Pyrgulopsis gracilis", "Pyrgulopsis fairbanksensis", "Pyrgulopsis breviloba", "Pyrgulopsis planulata", "Pyrgulopsis bruesi", "Tryonia clathrata", "Pyrgulopsis marcida", "Pyrgulopsis hubbsi", "Pyrgulopsis humboldtensis", "Pyrgulopsis sathos", "Pyrgulopsis wongi","Pyrgulopsis imperialis", "Pyrgulopsis sublata", "Pyrgulopsis landyei", "Pyrgulopsis basiglans", "Pyrgulopsis lockensis", "Pyrgulopsis anguina", "Pyrgulopsis pisteri", "Tryonia ericae", "Pyrgulopsis avernalis", "Pyrgulopsis carinifera", "Tryonia monitorae", "Pyrgulopsis neritella", "Pyrgulopsis militaris", "Pyrgulopsis serrata", "Pyrgulopsis variegata", "Pyrgulopsis micrococcus", "Pyrgulopsis pictilis", "Pyrgulopsis merriami", "Pyrgulopsis aurata", "Tryonia elata","Fluminicola dalli", "Pyrgulopsis sadai", "Pyrgulopsis bifurcata", "Juga interioris", "Pyrgulopsis turbatrix", "Pyrgulopsis anatina", "Pyrgulopsis umbilicata", "Pyrgulopsis sulcata", "Tryonia angulata", "Pyrgulopsis deaconi", "Pyrgulopsis limaria", "Eremopyrgus eganensis", "Pyrgulopsis sterilis", "Pyrgulopsis orbiculata", "Pyrgulopsis cruciglans", "Fluminicola turbiniformis", "Pyrgulopsis millenaria", "Pyrgulopsis hovinghi", "Pyrgulopsis vinyardi", "Fluminicola virginius")
+
+nv_sgcn <- taxa_meta_density2 %>%
+  filter(scientificName%in%nv.sgcn.list)%>%
+  mutate(state = "NV")
+
+sort(unique(nv_sgcn$scientificName))
+```
+
+Only 1 NV SGCN present in dataset. 
+
+#### G. Combine all states and save: 
+
+```{r}
+all_sgcn <- rbind(ut_sgcn, id_sgcn, wy_sgcn, co_sgcn, az_sgcn, nv_sgcn) #rowbind data from all 6 states
+
+
+#Combine states for taxa that are listed in multiple states (e.g. instead of a row for Taxa 1/ UT and another row for Taxa 1/ NV, want 1 row with Taxa 1 / UT,NV)
+
+sgcn_states <- all_sgcn%>% 
+  distinct(scientificName, state)%>% #extract states and taxa names
+  arrange(scientificName)%>% #sort by taxa name
+  group_by(scientificName)%>% # group by taxa name
+  summarise(states = toString(unique(state))) #create new "states" column with a character string of all unique values of "state" within that taxa
+
+all_sgcn_states <- merge(all_sgcn, sgcn_states)%>% #merge with the full SGCN dataset
+  select(!state)%>% #drop the old "state" column
+  distinct() #drop duplicate rows
+  
+sort(unique(all_sgcn_states$scientificName)) #return list of all SGCN taxa present in the data
+```
+
+Total of 24 SGCNs that are listed in different states. **NOTE - many of these taxa are present in the data but have splitCounts/densities of 0... When dropping taxa with splitCount == 0, only have 10 SGCNs in the dataset**
+
+Save this file for future analysis: 
+
+```{r}
+write.csv(all_sgcn_states,"cleaned_data/sgcns.csv")
+```
+
 ---
 ---
 
@@ -589,10 +868,11 @@ write.csv(site_yr_longterm, "cleaned_data/longterm_comid_richness.csv")
 
 #### B. Create complexes of genera when unclear if updated or not. 
 
-### 6. Address ambiguous naming and samples not ID'd to the genus level: 
+### 6. Address ambiguous naming and samples not ID'd to the genus level: (except midges, etc.)
 
 #### A. Drop any obs. not ID'd to genus level
 
 #### B. Use genus level for samples with multiple species names (e.g. species1/species2)
 
 #### C. Normalize any combined genus names - e.g., for "genus1/genus2", change all observations of "genus1" or "genus2" to "genus1/genus2".
+
