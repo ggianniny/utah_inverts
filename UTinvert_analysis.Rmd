@@ -21,8 +21,8 @@ library(maps) #mapping with ggplot2
 library(ggmap) #for mapping w/google map basemaps
 
 #setting up ggmap API key: 
-GOOGLEMAPS_API_KEY <- "AIzaSyAWkDtYS-cc_ziVfJIReObeHLX39pYWWq8"
-register_google(key = GOOGLEMAPS_API_KEY)
+maps_api_key <- Sys.getenv("GOOGLEMAPS_API_KEY")
+register_google(key = maps_api_key)
 ```
 
 ## Overview
