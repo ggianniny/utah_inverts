@@ -20,7 +20,9 @@ library(sp)
 library(maps) #mapping with ggplot2
 library(ggmap) #for mapping w/google map basemaps
 
-#setting up ggmap API key: 
+#Setting up ggmap API key: NOTE - for the map figures to work, you'll need to set up a Google Maps Platform Console Account at
+#https://cloud.google.com/maps-platform/, create an API key, and store it in your .Renviron file as "GOOGLEMAPS_API_KEY". 
+
 maps_api_key <- Sys.getenv("GOOGLEMAPS_API_KEY")
 register_google(key = maps_api_key)
 ```
