@@ -19,6 +19,7 @@ library(broom)
 library(sp)
 library(maps) #mapping with ggplot2
 library(ggmap) #for mapping w/google map basemaps
+library(scales)
 
 #Setting up ggmap API key: NOTE - for the map figures to work, you'll need to set up a Google Maps Platform Console Account at
 #https://cloud.google.com/maps-platform/, create an API key, and store it in your .Renviron file as "GOOGLEMAPS_API_KEY". 
@@ -640,8 +641,8 @@ First, extract all observations of *Zapada* into a new dataframe:
 
 ```{r}
 zapada <- taxa_densities%>%
-  filter(sampleDate > "1990-01-01")%>% #dropping observations before 1990
-  filter(genus == "Zapada", 
+  dplyr::filter(sampleDate > "1990-01-01")%>% #dropping observations before 1990
+  dplyr::filter(genus == "Zapada", 
          !splitCount == 0) #dropping samples where 0 individuals were counted
 ```
 
@@ -773,25 +774,41 @@ zapada_hi <- zapada %>%
 length(unique(zapada_hi$siteId))
 ```
 
-Only 3 sites above 3000m - probably can't do much with that. 
+27 sites above 3000m - should be plenty to go with that rather than the 10 highest. 
 
-Alternative: identify 10 highest sites, extract data from only those sites:
+Get site lat/long and elevation for each of these 27 sites:
 
 ```{r}
-zap_hiSites <- zapada %>%
+zap_hiSites <- zapada_hi %>%
   select(siteId, siteLongitude, siteLatitude,elev_m)%>% #select site and elevation cols
-  distinct()%>% #remove duplicates
-  arrange(desc(elev_m))%>% #sort by elevation, largest to smallest
-  slice(1:10) #extract first 10 sites
+  distinct()
 
-zap_hi10 <- zapada %>%
-  filter(siteId%in%zap_hiSites$siteId) #create new dataframe with Zapada data from 10 highest sites
+zap_hiSamples <-zapada_hi %>%
+  select(sampleId, siteId, siteLongitude, siteLatitude, elev_m)%>%
+  distinct()
 ```
+
+Export site ID's, stream names, and sample ID's for all of these sites: 
+
+```{r}
+# Bring in site names from metadata file: 
+site_names <- read.csv("raw_data/Utah_Sample_Data_Final_comids.csv")%>%
+  select(sampleId, siteId, waterbodyName)
+
+#merge with Zapada site info: 
+zapHi_export <- merge(zap_hiSamples, site_names, all.y = F)%>%
+  arrange(waterbodyName)%>%
+  rename(elevationMeters = elev_m)
+
+#save
+write.csv(zapHi_export, "cleaned_data/high_zapada_info.csv")
+```
+
 
 Check distribution of density at these sites: 
 
 ```{r}
-ggplot(zap_hi10, aes(x = log10(taxa_density)))+
+ggplot(zapada_hi, aes(x = log10(taxa_density)))+
   geom_histogram()
 ```
 
@@ -800,7 +817,7 @@ Strong left skew, use log transform.
 **Is density changing at these sites?** 
 
 ```{r}
-ggplot(zap_hi10, aes(x = sampleDate, y = log10(taxa_density)))+
+ggplot(zapada_hi, aes(x = sampleDate, y = log10(taxa_density)))+
   geom_point(size = 0.5)+
   #geom_smooth(size = 0.5)+
   geom_smooth(se = F, method = "lm", color = "Red", linetype = "dashed")+
@@ -808,14 +825,14 @@ ggplot(zap_hi10, aes(x = sampleDate, y = log10(taxa_density)))+
   labs(x = "Sample Date", y = "Zapada Density (individuals/m2)")
 ```
 
-No clear trends. 
+Possibly a decline in density over time. 
 
 **Are there trends in prevalence, total abundance, or mean density over time?**
 
 Calculate number of sites w/ high elevation Zapada per year, mean density and total abundance per year:
 
 ```{r}
-zapHi_yrs <- zap_hi10%>%
+zapHi_yrs <- zapada_hi%>%
   mutate(yr = year(sampleDate))%>% #create new column with year
   group_by(yr)%>% #group by year
   summarise(density_xbar = mean(taxa_density), #calculate mean density, # sites with P. Cal., and total abundance for each year
@@ -852,9 +869,9 @@ zapHi.dens.lm <- lm(density_xbar ~ yr, zapHi_yrs)
 summary(zapHi.dens.lm)
 ```
 
-No Significant trends. 
+Non-significant decline in density. 
 
-#### vi. Map of the 10 highest zapada sites
+#### vi. Map of the sites above 3000m:
 
 First, get map data for Utah: 
 
@@ -870,13 +887,13 @@ zap.map <- ggmap(get_map(c(-111.950684,39.419220), source = "stamen", zoom = 7, 
   geom_polygon(data = ut.counties, aes(x = long, y = lat, group = group), color = "black", fill = "white", size = 0.5, alpha = 0.0, linetype = "dotted")+ #add counties to map, use dotted lines
   geom_polygon(data = utah, aes(x = long, y = lat, group = group), color = "black", fill = "white", alpha = 0.0)+ #add state outline to map, use solid line
   geom_point(data = zap_hiSites, aes(x = siteLongitude, y = siteLatitude, color = elev_m, group = NULL), size = 4, pch = 20)+ #add zapada sites, color code by elevation. 
-  labs(color = "Site elevation (m)", title = "10 highest sites with Zapada")+ #updating legend title
+  labs(color = "Site elevation (m)", title = "Sites >3000m elevation with Zapada")+ #updating legend title
   annotate(geom = "text", x = -111.8, y = 39, label = "Utah", size = 6, fontface = 4, color = "black", alpha = 0.75)+ #add "Utah" label to center of map
   scale_color_gradient(low = "#DCB0FC", high = "#7004BF")+ #setting color gradient for site colors
   theme_void()+ #removing lat/long from x and y axes 
   theme(legend.title = element_text(size = 10, face = "bold"), #adjusting legend title/text/plot title size, face, and position
-        legend.text = element_text(size = 10), 
-        legend.position = "right", 
+        legend.text = element_text(size = 10, angle = 45, hjust = 1), 
+        legend.position = "bottom", 
         plot.title = element_text(size = 12, face = "bold", hjust = 0.5) 
         )
 zap.map
@@ -888,112 +905,438 @@ Save this plot:
 ggsave("plots/zapada_map.pdf", zap.map, device = "pdf", units = "in", width = 6.5, height = 4.5, dpi = "retina")
 ```
 
+Plot of high elevation Zapada density over time: 
 
+```{r}
+zapHi.scatter <- ggplot(zapHi_yrs, aes(x = yr, y = density_xbar))+
+  geom_point(size = 0.5)+
+  geom_smooth(size = 0.5, linetype = "dashed")+
+  geom_smooth(se = F, method = "lm", color = "Red", linetype = "dashed")+
+  theme_classic()+
+  labs(x = "Sample Date", y = "High elevation Zapada density (individuals/m2)")+
+  theme(axis.title = element_text(size = 10, face = "bold"), 
+        axis.text = element_text(size = 9))+
+  #ylim(0, 2000)+
+  annotate(geom = "text", x = 2011, y = 2000, label = "P = 0.11; Adj. R2 = 0.14", size = 3.5, fontface = "bold")
+zapHi.scatter
+```
+
+Stack with map and save: 
+
+```{r}
+zapHi.stack <- zap.map|zapHi.scatter
+zapHi.stack
+```
+
+Save: 
+
+```{r}
+ggsave("plots/zapHi_trends.pdf", zapHi.stack, device = "pdf", units = "in", width = 11, height = 5, dpi = "retina")
+```
 
 ### C.  SGCNs from Utah and surrounding states
 
-First, extract all observations of *P. pilsbryana*:
+Read in SGCN data (includes SGCNs from UT, ID, CO, NV, WY, AZ):
 
 ```{r}
-pPils <- taxa_densities%>%
-  filter(scientificName == "Pyrgulopsis pilsbryana")
+sgcn <- read.csv("cleaned_data/sgcns.csv")%>%
+  mutate(
+         spp = word(scientificName, start = 2, end = 2), 
+         g_abbrev = paste(substr(genus, 1, 1), ".", sep = ""),
+        g_spp = paste(g_abbrev, spp, sep = " ")
+         )%>%
+  mutate(taxa_state = paste(g_spp, states, sep = " - "),)
+
+
+sgcn_means <- sgcn %>%
+  mutate(yr = year(sampleDate))%>%
+  group_by(scientificName, yr)%>%
+  summarise(density_xbar = mean(taxa_density))
+
+unique(sgcn$states)
 ```
 
-Only 2 observations of *P. pilsbryana* at 2 different sites. Where are these sites? 
+#### i. Map + density trends for UT SGCNs: 
+
+Filter out UT SGCNs:
 
 ```{r}
-pPils.map <- ggmap(get_map(c(-111.950684,39.419220), source = "stamen", zoom = 7, maptype = "terrain-background"))+ #basemap: terrain background (no labels) from google maps platform console, centered on UT centroid
+ut <- sgcn %>%
+  filter(str_detect(states, "UT") == T) #filter all rows that include UT in the "states" column
+```
+
+Map UT SGCNs, color coded by taxa: 
+
+```{r}
+utSGCN.map <- ggmap(get_map(c(-111.950684,39.419220), source = "stamen", zoom = 7, maptype = "terrain-background"))+ #basemap: terrain background (no labels) from google maps platform console, centered on UT centroid
   geom_polygon(data = ut.counties, aes(x = long, y = lat, group = group), color = "black", fill = "white", size = 0.5, alpha = 0.0, linetype = "dotted")+ #add counties to map, use dotted lines
   geom_polygon(data = utah, aes(x = long, y = lat, group = group), color = "black", fill = "white", alpha = 0.0)+ #add state outline to map, use solid line
-  geom_point(data = pPils, aes(x = siteLongitude, y = siteLatitude, group = NULL), size = 4, color = "red", pch = 20)+ #add zapada sites, color code by elevation. 
-  labs(color = "Site elevation (m)", title = "Sites with P. pilsbryana")+ #updating legend title
+  geom_point(data = ut, aes(x = siteLongitude, y = siteLatitude, color = g_spp, group = scientificName), size = 4, pch = 20)+ #add sites w/SGCNs; color code by taxa
+  labs(color = "Taxa", title = "Distribution of current Utah SGCNs")+ #updating legend title
   annotate(geom = "text", x = -111.8, y = 39, label = "Utah", size = 6, fontface = 4, color = "black", alpha = 0.75)+ #add "Utah" label to center of map
   theme_void()+ #removing lat/long from x and y axes 
-  theme(
-        plot.title = element_text(size = 12, face = "bold", hjust = 0.5) 
+  theme(legend.title = element_text(size = 10, face = "bold"), #adjusting legend title/text/plot title size, face, and position
+        legend.text = element_text(size = 10, face = "italic"), 
+        legend.position = "none", 
+        plot.title = element_text(size = 12, face = "bold", hjust = 0.5)
         )
-pPils.map
+utSGCN.map
 ```
 
-Any temporal trends in density? 
+Scatterplot showing trends in density of each species over time: 
+
+First, calculate mean density for each taxa for each year: 
 
 ```{r}
-ggplot(pPils, aes(x = sampleDate, y = log10(taxa_density)))+
-  geom_point(size = 0.5)+
-  #geom_smooth(size = 0.5)+
-  geom_smooth(se = F, method = "lm", color = "Red", linetype = "dashed")+
-  theme_classic()+
-  labs(x = "Sample Date", y = "P. pilsbryana density (individuals/m2)")
-```
-
-Only 2 observations, so hard to say. 
-
-### D. *Pyrgulopsis saxatilis* (Sub-globose Snake Pyrg)
-
-First, extract all observations of *P. saxatilis*:
-
-```{r}
-pSax <- taxa_densities%>%
-  filter(scientificName == "Pyrgulopsis saxatilis")
-
-unique(pSax$siteId)
-```
-
-15 observations of *P. saxatilis* at 4 different sites. Where are these sites? 
-
-```{r}
-pSax.map <- ggmap(get_map(c(-111.950684,39.419220), source = "stamen", zoom = 7, maptype = "terrain-background"))+ #basemap: terrain background (no labels) from google maps platform console, centered on UT centroid
-  geom_polygon(data = ut.counties, aes(x = long, y = lat, group = group), color = "black", fill = "white", size = 0.5, alpha = 0.0, linetype = "dotted")+ #add counties to map, use dotted lines
-  geom_polygon(data = utah, aes(x = long, y = lat, group = group), color = "black", fill = "white", alpha = 0.0)+ #add state outline to map, use solid line
-  geom_point(data = pSax, aes(x = siteLongitude, y = siteLatitude, group = NULL), size = 4, color = "red", pch = 20)+ #add zapada sites, color code by elevation. 
-  labs(color = "Site elevation (m)", title = "Sites with P. saxatilis")+ #updating legend title
-  annotate(geom = "text", x = -111.8, y = 39, label = "Utah", size = 6, fontface = 4, color = "black", alpha = 0.75)+ #add "Utah" label to center of map
-  theme_void()+ #removing lat/long from x and y axes 
-  theme(
-        plot.title = element_text(size = 12, face = "bold", hjust = 0.5) 
-        )
-pSax.map
-```
-
-Check for temporal trends in density: 
-
-```{r}
-ggplot(pSax, aes(x = sampleDate, y = log10(taxa_density)))+
-  geom_point(size = 0.5)+
-  #geom_smooth(size = 0.5)+
-  geom_smooth(se = F, method = "lm", color = "Red", linetype = "dashed")+
-  theme_classic()+
-  labs(x = "Sample Date", y = "P. saxatilis Density (individuals/m2)")
-```
-
-Possibly a positive trend in density - what about average density for each year? 
-
-Calculate mean yearly density: 
-
-```{r}
-pSax_yrs <- pSax %>%
-  mutate(yr = year(sampleDate))%>% #add year column
-  group_by(yr)%>% #group by year
+ut_means <- ut %>%
+  mutate(yr = year(sampleDate))%>% #create year column
+  group_by(g_spp, yr)%>% #group by taxa and year
   summarise(density_xbar = mean(taxa_density), #calculate mean density
-            tot_abund = sum(splitCount)) #calculate total abundance
+            tot_abund = sum(splitCount)) #and total abundance
 ```
-
-Plotting:
 
 ```{r}
-pSax.density <- ggplot(pSax_yrs, aes(x = yr, y = density_xbar))+
-  geom_point(size = 0.5)+
-  #geom_smooth(size = 0.5)+
-  geom_smooth(se = F, method = "lm", color = "Red", linetype = "dashed")+
+utSGCN.scatter <- ggplot(ut_means, aes(x = yr, y = density_xbar, color = g_spp))+
+  geom_point()+
+  geom_smooth(se = F, method = "lm", size = 0.5, linetype = "dashed")+
   theme_classic()+
-  labs(x = "Sample Date", y = "P. saxatilis Density (individuals/m2)")
-pSax.density
+  labs(x = "Year", y = "Mean taxa density (# individuals/m2)", color = "Taxa Name")+
+  theme(legend.title = element_text(size = 10, face = "bold"), #adjusting legend title/text/plot title size, face, and position
+        strip.text = element_text(size = 10, face = "italic"), 
+        legend.position = "none"
+        )+
+  facet_wrap(~g_spp, scales = "free")
+utSGCN.scatter
 ```
 
-Increase in density overtime, but probably not enough data to determine if significant. 
+Are any of these trends significant? 
+
+```{r}
+ut_nested <- ut_means%>%
+  nest(data = -scientificName)
+```
+
+Run a model for each taxa separately, return a summary table with model results for each taxa: 
+
+```{r}
+ut_models <- ut_nested %>%
+  mutate(model = purrr::map(data, ~lm(density_xbar~yr, data = .)%>%
+                       tidy))%>%
+  unnest(model)%>%
+  filter(term == "yr")
+ut_models
+```
+
+No significant trends (unsurprising, not much data). 
+
+Add elevation figure: 
+
+```{r}
+utSGCN.elev <- ggplot(ut, aes(x = sampleDate, y = elev_m, color = scientificName))+
+  geom_point()+
+  theme_classic()+
+  theme(legend.position = "none", 
+        axis.text.x = element_text(angle = 45, hjust = 1))+
+  labs(x = "Sample Date", y = "Elevation (m)")
+utSGCN.elev
+```
 
 
-**Figure idea: Maps + density trends for species of concern**
+Stack with map: 
+
+```{r}
+utSGCN.stack <- utSGCN.map|utSGCN.scatter
+utSGCN.stack
+```
+
+Save: 
+
+```{r}
+ggsave("plots/utSGCN.pdf", utSGCN.stack, device = "pdf", units = "in", width = 11, height = 5, dpi = "retina")
+```
+
+#### ii. Map + density trends for SGCNs from all other states
+
+Drop UT SGCNs, keep all others:
+
+```{r}
+other_states <- sgcn %>%
+  filter(!(str_detect(states, "UT") == T))%>% #drop all rows that include UT in the "states" column
+  mutate(taxa_state = paste(g_spp, states, sep = " - "))
+```
+
+Make a map of all SGCN's from other states - color code by taxa, different shapes for each state: 
+
+```{r}
+adjSGCN.map <- ggmap(get_map(c(-111.950684,39.419220), source = "stamen", zoom = 7, maptype = "terrain-background"))+ #basemap: terrain background (no labels) from google maps platform console, centered on UT centroid
+  geom_polygon(data = ut.counties, aes(x = long, y = lat, group = group), color = "black", fill = "white", size = 0.5, alpha = 0.0, linetype = "dotted")+ #add counties to map, use dotted lines
+  geom_polygon(data = utah, aes(x = long, y = lat, group = group), color = "black", fill = "white", alpha = 0.0)+ #add state outline to map, use solid line
+  geom_point(data = other_states, aes(x = siteLongitude, y = siteLatitude, color = taxa_state, shape = states), size = 3)+ #add sites w/SGCNs; color code by taxa
+  labs(color = "Taxa", shape = "State", title = "Distribution of SGCNs from neighboring states")+ #updating legend title
+  annotate(geom = "text", x = -111.8, y = 39, label = "Utah", size = 6, fontface = 4, color = "black", alpha = 0.75)+ #add "Utah" label to center of map
+  theme_void()+ #removing lat/long from x and y axes 
+  theme(legend.title = element_text(size = 10, face = "bold"), #adjusting legend title/text/plot title size, face, and position
+        legend.text = element_text(size = 10, face = "italic"), 
+        legend.position = "bottom", 
+        plot.title = element_text(size = 12, face = "bold", hjust = 0.5)
+        )
+adjSGCN.map
+```
+
+Make plots of density over time - first, calculate mean density for each taxa*yr
+
+```{r}
+other_means <- other_states %>%
+  mutate(yr = year(sampleDate))%>% #add year column
+  group_by(taxa_state, yr)%>% #group by taxa and year
+  summarise(density_xbar = mean(taxa_density),  #calculate density
+            tot_abund = sum(splitCount), #calculate total abundance
+            scientificName = unique(scientificName),
+            states = unique(states)) #retain states column
+
+ #get rid of taxa w/ only 1 year of data: 
+oneyr <- other_means %>% #create new obj
+  group_by(taxa_state)%>%  #group by taxa
+  summarise(n_yrs = length(unique(yr)) 
+            ,scientificName = unique(scientificName)
+            )%>% #count # years for that taxa
+  filter(n_yrs == 1) #extract rows with only 1 observation
+
+other_multiyear <- other_means %>%
+  filter(!taxa_state%in%oneyr$taxa_state) #drop taxa with only 1 year of data
+```
+
+Create plot: 
+
+```{r}
+adjSGCN.scatter <- ggplot(other_multiyear, aes(x = yr, y = density_xbar, color = taxa_state, shape = states))+
+  geom_point()+
+  geom_smooth(se = F, method = "lm", size = 0.5, linetype = "dashed")+
+  theme_classic()+
+  labs(x = "Year", y = "Mean taxa density (# individuals/m2)", color = "Taxa Name")+
+  theme(legend.title = element_text(size = 10, face = "bold"), #adjusting legend title/text/plot title size, face, and position
+        strip.text = element_text(size = 8, face = "italic"), 
+        legend.position = "none"
+        )+
+  facet_wrap(~taxa_state, scales = "free")
+adjSGCN.scatter
+```
+
+Stack and save: 
+
+```{r}
+adjSGCN.stack <- adjSGCN.map|adjSGCN.scatter
+adjSGCN.stack
+
+ggsave("plots/adjacentSGCN.pdf", adjSGCN.stack, device = "pdf", units = "in", width = 12, height =6, dpi = "retina")
+```
+
+Are any of these trends statistically significant? 
+
+Basic LM of density ~ year for each taxa: 
+
+Nest data by taxa: 
+
+```{r}
+sgcn_nested <- other_multiyear%>%
+  nest(data = -taxa_state)
+```
+
+Run a model for each taxa separately, return a summary table with model results for each taxa: 
+
+```{r}
+sgcn_models <- sgcn_nested %>%
+  mutate(model = purrr::map(data, ~lm(density_xbar~yr, data = .)%>%
+                       tidy))%>%
+  unnest(model)%>%
+  filter(term == "yr")
+sgcn_models
+```
+
+Significant decline in *P. californica*, weakly significant increase in *H. azteca*. 
+
+Overview map:
+
+```{r}
+
+AllSGCN.map <- ggmap(get_map(c(-111.950684,39.419220), source = "stamen", zoom = 7, maptype = "terrain-background"))+ #basemap: terrain background (no labels) from google maps platform console, centered on UT centroid
+  geom_polygon(data = ut.counties, aes(x = long, y = lat, group = group), color = "black", fill = "white", size = 0.5, alpha = 0.0, linetype = "dotted")+ #add counties to map, use dotted lines
+  geom_polygon(data = utah, aes(x = long, y = lat, group = group), color = "black", fill = "white", alpha = 0.0)+ #add state outline to map, use solid line
+  geom_point(data = sgcn, aes(x = siteLongitude, y = siteLatitude, color = taxa_state, shape = states), size = 3)+ #add sites w/SGCNs; color code by taxa
+  labs(color = "Taxa", shape = "State", title = "Distribution of SGCNs from Utah & neighboring states")+ #updating legend title
+  annotate(geom = "text", x = -111.8, y = 39, label = "Utah", size = 6, fontface = 4, color = "black", alpha = 0.75)+ #add "Utah" label to center of map
+  theme_void()+ #removing lat/long from x and y axes 
+  theme(legend.title = element_text(size = 10, face = "bold"), #adjusting legend title/text/plot title size, face, and position
+        legend.text = element_text(size = 10, face = "italic"), 
+        legend.position = "bottom", 
+        plot.title = element_text(size = 12, face = "bold", hjust = 0.5)
+        )+
+  scale_shape_manual(values = c(16, 17, 15, 3, 7, 18, 8))+
+  scale_color_manual(values = hue_pal()(18))
+AllSGCN.map
+```
+
+Save: 
+
+```{r}
+ggsave("plots/sgcn_plots/sgcn_overview.pdf", AllSGCN.map, device = "pdf", units = "in", height = 9, width = 6.5, dpi = "retina")
+```
+
+#### iii. Map + density + elevation for each SGCN taxa
+
+Goal is to produce a map + density plot + elevation plot for each SGCN in the dataset. Including SGCNs from all states, there are 18 total: 
+
+```{r}
+sort(unique(sgcn$scientificName))
+```
+
+Omitting Taxa with only one year of data: 
+
+```{r}
+sgcn_multiyear <- filter(sgcn, !scientificName%in%oneyr$scientificName)
+sort(unique(sgcn_multiyear$scientificName))
+``` 
+
+For each SGCN taxa, want to produce a map of that taxa's distribution in Utah next to stacked plots showing the taxa density over time and site elevations over time. 
+
+First, add color and shape palates to keep color/shape scheme the same as the overview map: 
+
+```{r}
+taxa_colors <- sgcn %>%
+  select(scientificName, states)%>% 
+  distinct()%>%
+  mutate(taxa_color = hue_pal()(18)) #creating dataframe with column containing hex codes for each of the 18 colors used for each taxa in the overview map
+
+state_shapes <- sgcn %>%
+  select(states)%>%
+  distinct()%>%
+  mutate(state_shape = c(16, 17, 15, 3, 7, 18, 8)) #creating dataframe with column with the shape code used for each different state in the overview map
+
+taxa_state_pals <- merge(taxa_colors, state_shapes) #merging these DF's to get new dataframe with taxa names, colors, and state shape codes
+
+
+sgcn_plot <- merge(sgcn, taxa_state_pals) #merge this DF with the SGCN data to add shape codes and taxa colors to the entire dataset
+```
+
+Plotting for each taxa using a for loop: 
+
+```{r}
+sgcn.names <- c(sort(unique(sgcn_multiyear$scientificName))) #make a list of all SGCNs with multiple years of data
+plot.list <- list() #initialize empty list for storing plots
+
+for(i in 1:length(sgcn.names)){ #Open for loop, iterate over each taxa name in the sgcn.names list
+  dat <- filter(sgcn_plot, scientificName == sgcn.names[i]) #Create temporary dataframe with data for the "ith" taxa, then plot using that data:
+  
+#Map  
+  m <- ggmap(get_map(c(-111.950684,39.419220), source = "stamen", zoom = 7, maptype = "terrain-background"))+ #basemap: terrain background (no labels) from google maps platform console, centered on UT centroid
+  geom_polygon(data = ut.counties, aes(x = long, y = lat, group = group), color = "black", fill = "white", size = 0.5, alpha = 0.0, linetype = "dotted")+ #add counties to map, use dotted lines
+  geom_polygon(data = utah, aes(x = long, y = lat, group = group), color = "black", fill = "white", alpha = 0.0)+ #add state outline to map, use solid line
+  geom_point(data = dat, aes(x = siteLongitude, y = siteLatitude, color = taxa_color, shape = factor(state_shape)), color = dat$taxa_color, pch = dat$state_shape, size = 3)+ #add sites w/SGCNs; color code by taxa
+  labs(color = "Taxa", shape = "State", #updating legend title
+       title = paste("Distribution of", unique(dat$scientificName), "in Utah", sep = " ") #adding plot title using taxa name
+       )+ 
+  annotate(geom = "text", x = -111.8, y = 39, label = "Utah", size = 6, fontface = 4, color = "black", alpha = 0.75)+ #add "Utah" label to center of map
+  theme_void()+ #removing lat/long from x and y axes 
+  theme(legend.title = element_text(size = 10, face = "bold"), #adjusting legend title/text/plot title size, face, and position
+        legend.text = element_text(size = 10, face = "italic"), 
+        legend.position = "none", 
+        plot.title = element_text(size = 10, face = "bold", hjust = 0.5)
+        )
+  
+  #Density: 
+d <- ggplot(filter(sgcn_means, scientificName == sgcn.names[i]), aes(x = yr, y = density_xbar))+
+  geom_point(color = unique(dat$taxa_color), pch = unique(dat$state_shape))+
+  geom_smooth(se = F, method = "lm", size = 0.5, linetype = "dashed", color = unique(dat$taxa_color))+
+  theme_classic()+
+  labs(x = "Year", y = "Mean taxa density", color = "Taxa Name")+
+  theme(legend.title = element_text(size = 10, face = "bold"), #adjusting legend title/text/plot title size, face, and position
+        strip.text = element_text(size = 8, face = "italic"), 
+        legend.position = "none"
+        )+
+   annotation_custom(grid::textGrob( #adding custom annotation to plot to add P value for density ~ year
+     paste("P = ", round(summary(lm(density_xbar~yr, filter(sgcn_means, scientificName == sgcn.names[i])))$coefficients[,4][2], 3), sep = ""), #label = pasting "P =" and the P value from a simple lm of density ~ year
+                                    0.9, 0.9, #adjusting label position (relative to plot area)
+     gp = grid::gpar(fontsize = 10))) #adjusting font size
+
+#Elevation
+e <- ggplot(filter(sgcn, scientificName == sgcn.names[i]), aes(x = year(sampleDate), y = elev_m))+
+  geom_point(color = unique(dat$taxa_color), pch = unique(dat$state_shape))+
+  theme_classic()+
+  labs(x = "Year", y = "Sample Elevation (m)", color = "Taxa Name")+
+  theme(legend.title = element_text(size = 10, face = "bold"), #adjusting legend title/text/plot title size, face, and position
+        strip.text = element_text(size = 8, face = "italic"), 
+        legend.position = "none"
+        )+
+  scale_y_continuous(limits = c(min(sgcn$elev_m), max(sgcn$elev_m))) #setting y limits = to min and max elevations in the dataset so that all plots will be on the same scale
+
+#combine all three plots: map next to density stacked above elevation
+comb <- m|(d/e)
+
+plot.list[[i]]<-comb #save plot as "ith" object in plot.list
+
+fp <- paste("plots/sgcn_plots/", sgcn.names[i], ".pdf", sep = "") #generate filepath for saving pdf
+
+ggsave(fp, comb, device = "pdf", units = "in", height = 4.5, width = 8, dpi = "retina") #save pdf of combined plot
+print(paste("completed", sgcn.names[i], sep = " ")) #return taxa name for tracking while code is running
+}
+
+```
+
+To check individual plots - call plot.list[[#]] - e.g: 
+
+```{r}
+plot.list[[3]]
+```
+
+Final plots: Map of species with only 1 yr of data + elevations for those taxa: 
+
+```{r}
+#Data Setup: 
+sgcn_oneyr <- sgcn_plot %>%
+  filter(scientificName%in%oneyr$scientificName)
+
+#Map: 
+oneyr.map <- ggmap(get_map(c(-111.950684,39.419220), source = "stamen", zoom = 7, maptype = "terrain-background"))+ #basemap: terrain background (no labels) from google maps platform console, centered on UT centroid
+  geom_polygon(data = ut.counties, aes(x = long, y = lat, group = group), color = "black", fill = "white", size = 0.5, alpha = 0.0, linetype = "dotted")+ #add counties to map, use dotted lines
+  geom_polygon(data = utah, aes(x = long, y = lat, group = group), color = "black", fill = "white", alpha = 0.0)+ #add state outline to map, use solid line
+  geom_point(data = sgcn_oneyr, aes(x = siteLongitude, y = siteLatitude, color = scientificName, shape = factor(state_shape)), size = 3)+ #add sites w/SGCNs; color code by taxa
+  labs(color = "Taxa", shape = "Listing State(s)", #updating legend title
+       title = "Additional SGCNs with <2yrs data" #adding plot title using taxa name
+       )+ 
+  annotate(geom = "text", x = -111.8, y = 39, label = "Utah", size = 6, fontface = 4, color = "black", alpha = 0.75)+ #add "Utah" label to center of map
+  theme_void()+ #removing lat/long from x and y axes 
+  theme(legend.title = element_text(size = 10, face = "bold"), #adjusting legend title/text/plot title size, face, and position
+        legend.text = element_text(size = 10, face = "italic"), 
+        legend.position = "right", 
+        plot.title = element_text(size = 10, face = "bold", hjust = 0.5)
+        )+
+  scale_color_manual(values = unique(sgcn_oneyr$taxa_color), labels = unique(sgcn_oneyr$scientificName))+
+  scale_shape_manual(values = unique(sgcn_oneyr$state_shape), labels = unique(sgcn_oneyr$states))
+
+
+#Elevations: 
+oneyr.elev <- ggplot(sgcn_oneyr, aes(x = year(sampleDate), y = elev_m, color = scientificName, shape = states))+
+  geom_point(size = 3)+
+  theme_classic()+
+  labs(x = "Year", y = "Sample Elevation (m)", color = "Taxa Name")+
+  theme(legend.title = element_text(size = 10, face = "bold"), #adjusting legend title/text/plot title size, face, and position
+        strip.text = element_text(size = 8, face = "italic"), 
+        legend.position = "none"
+        )+
+  scale_color_manual(values = unique(sgcn_oneyr$taxa_color), labels = unique(sgcn_oneyr$scientificName))+
+  scale_shape_manual(values = unique(sgcn_oneyr$state_shape), labels = unique(sgcn_oneyr$states))+
+  scale_y_continuous(limits = c(min(sgcn$elev_m), max(sgcn$elev_m))) #setting y limits = to min and max elevations in the dataset so that all plots will be on the same scale
+
+#Stack:
+oneyr.comb <- oneyr.map|oneyr.elev
+oneyr.comb
+
+#Save:
+ggsave("plots/sgcn_plots/sgcns_oneYr.pdf", oneyr.comb, device = "pdf", units = "in", height = 4.5, width = 8, dpi = "retina") #save pdf of combined plot
+
+
+```
+
 
 ## III. Effects of sampling design (lab split, field split, area sampled) on total sample density
 

@@ -709,7 +709,9 @@ Make a list of all invertebrate UT SGCNs (from https://wildlife.utah.gov/pdf/WAP
 ut.sgcn.list <- c( "Pacifastacus gambelii", "Stygobromus utahensis","Oreohelix yavapai cummingsi", "Fossaria techella","Pyrgulopsis pilsbryana", "Pyrgulopsis peculiaris", "Pyrgulopsis plicata", "Oreohelix parawanensis", "Pyrgulopsis inopinata", "Physa megalochlamys", "Planorbella binneyi", "Gastrocopta quadridens", "Oreohelix peripherica", "Pyrgulopsis deserta", "Tryonia porrecta", "Oreohelix eurekensis", "Stagnicola bonnevillensis", "Fluminicola coloradoensis", "Pyrgulopsis hamlinensis", "Oxyloma kanabense", "Planorbella oregonensis ", "Pyrgulopsis lindahlae", "Pyrgulopsis anguina"," Oreohelix haydeni", "Oreohelix howardi","Vertigo concinnula", "Gastrocopta pilsbryana", "Stagnicola montanensis", "Pyrgulopsis variegata", "Pyrgulopsis nuwuvi", "Pyrgulopsis fusca", "Pyrgulopsis pinetorum", "Pupoides hordaceus", "Colligyrus greggi", "Succinea rusticana", "Pyrgulopsis santaclarensis", "Catinella stretchiana", "Gastrocopta ashmuni", "Pyrgulopsis chamberlini", "Ogaridiscus subrupicola", "Hawaiia neomexicana", "Pyrgulopsis saxatilis", "Vallonia perspectiva", "Pupilla syngenes","Physella utahensis", "Margaritifera falcata", "Physella zionis", "Stagnicola traski", "Anodonta nutalliana") 
 
 ut_sgcn <- taxa_meta_density2 %>%
- filter(scientificName%in%ut.sgcn.list)%>%
+ filter(scientificName%in%ut.sgcn.list)
+
+ut_sgcn<- ut_sgcn%>%
   mutate(state = rep("UT", nrow(ut_sgcn)))
 
 sort(unique(ut_sgcn$scientificName)) #return list of species present in this dataset. 
@@ -727,7 +729,9 @@ Make a vector with all ID SGCN scientific names; extract data with those taxa pr
 id.sgcn.list <- c("Caurinella idahoensis","Ametropus ammophilus", "Centroptilum selanderorum", "Capnia zukeli", "Soyedina potteri", "Pictetiella expansa", "Agapetus montanus", "Anodonta californiensis", "Gonidea angulata", "Margaritifera falcata", "Oreohelix waltoni", "Oreohelix vortex", "Oreohelix strigosa goniogyra", "Oreohelix jugalis", "Oreohelix intersum", "Oreohelix idahoensis", "Oreohelix haydeni", "Polygyrella polygyrella", "Cryptomastix populi", "Cryptomastix harfordiana", "Cryptomastix mullani tuckeri", "Cryptomastix mullani latilabris", "Cryptomastix mullani clappi", "Cryptomastix mullani blandi", "Cryptomastix magnidentata", "Allogona ptychophora solida", "Allogona lombardii", "Pristiloma idahoense", "Udosarx lyrata", "Zacoleus idahoensis", "Prophysaon humile", "Hemphillia camelus", "Kootenaia burkei", " Discus marmorensis", "Anguispira nimapuna", "Helicodiscus salmonaceus", "Radiodiscus abietum", "Planogyra clappi", "Physa natricina", "Lanx", "Fisherola nuttalli", "Stagnicola montanensis", "Stagnicola idahoensis", "Stagnicola hinkleyi", "Valvata utahensis", "Taylorconcha serpenticola", "Pristinicola hemphilli", "Pyrgulopsis robusta", "Pyrgulopsis pilsbryana", "Pyrgulopsis bruneauensis", "Fluminicola coloradoensis")
 
 id_sgcn <- taxa_meta_density2%>%
-  filter(scientificName%in%id.sgcn.list)%>%
+  filter(scientificName%in%id.sgcn.list)
+  
+id_sgcn<- id_sgcn%>%
   mutate(state = rep("ID", nrow(id_sgcn)))
 
 sort(unique(id_sgcn$scientificName))
@@ -752,7 +756,9 @@ Make new dataframe with all present in UT:
 
 ```{r}
 wy_sgcn <- taxa_meta_density2 %>%
-  filter(scientificName%in%wy.sgcn.list$Scientific.Name)%>%
+  filter(scientificName%in%wy.sgcn.list$Scientific.Name)
+
+wy_sgcn <- wy_sgcn%>%
   mutate(state = rep("WY", nrow(wy_sgcn)))
 
 sort(unique(wy_sgcn$scientificName))
@@ -773,7 +779,9 @@ co.sgcn.list <- c("Ferrissia walker",
 "Physa cupreonitens", "Uniomerus tetralasmus", "Acroloxus coloradensis", "Promenetus exacuous", "Physa gyrina utahensis", "Gumaga griseola", "Ochrotrichia susanae", "Ochrotrichia trapoiza", "Argia alberta", "Calopteryx aequabilis", "Calopteryx maculata", "Cordulegaster dorsalis", "Dromogomphus spoliatus", "Enallagma vesperum", "Epitheca petechialis", "Erpetogomphus compositus", "Erythemis vesiculosa", "Lestes alacer","Leucorrhinia glacialis", "Libellula nodisticta", "Somatochlora ensigera", "Somatochlora hudsonica", "Stylurus intricatus", "Sympetrum madidum","Acentrella parvula","Acerpenna pygmaea", "Ametropus neavei","Apobaetis etowah","Baetis brunneicolor", "Camelobaetidius warreni", "Ephemerella apopsis", "Homoeneuria alleni", "Labiobaetis apache", "Lachlania saskatchewanensis", "Macdunnoa persimplex", "Neochoroterpes oklahoma", "Plauditus cestus","Pseudiron centralis", "Rhithrogena flavianula","Arsapnia arapahoe", "Capnia arapahoe", "Capnia nelsoni","Mesocapnia frisoni", "Pteronarcys californica", "Nemomydas solitarius")
 
 co_sgcn <- taxa_meta_density2%>%
-  filter(scientificName%in%co.sgcn.list)%>%
+  filter(scientificName%in%co.sgcn.list)
+
+co_sgcn <- co_sgcn%>%
   mutate(state = rep("CO", nrow(co_sgcn)))
 
 sort(unique(co_sgcn$scientificName))
@@ -796,7 +804,9 @@ Filter out observations of these taxa from the full dataset:
 
 ```{r}
 az_sgcn <- taxa_meta_density2%>%
-  filter(scientificName%in%az.sgcn.list$Scientific.Name)%>%
+  filter(scientificName%in%az.sgcn.list$Scientific.Name)
+
+az_sgcn<- az_sgcn%>%
   mutate(state = rep("AZ", nrow(az_sgcn)))
 
 sort(unique(az_sgcn$scientificName))
@@ -812,8 +822,10 @@ Make a list of all Nevada invertebrate SGCNs (from https://www.ndow.org/wp-conte
 nv.sgcn.list <- c("Anodonta californiensis","Tryonia variegata", "Pyrgulopsis pellita", "Pyrgulopsis erythropoma", "Pyrgulopsis peculiaris", "Pyrgulopsis papillata", "Pyrgulopsis coloradensis", "Pyrgulopsis lata", "Pyrgulopsis montana", "Pyrgulopsis fausta", "Pyrgulopsis crystalis", "Pyrgulopsis nanus", "Pyrgulopsis dixensis", "Pyrgulopsis aloba", "Pyrgulopsis villacampae", "Pyrgulopsis leporina", "Pyrgulopsis augustae", "Pyrgulopsis notidicola", "Pyrgulopsis isolata", "Pyrgulopsis gracilis", "Pyrgulopsis fairbanksensis", "Pyrgulopsis breviloba", "Pyrgulopsis planulata", "Pyrgulopsis bruesi", "Tryonia clathrata", "Pyrgulopsis marcida", "Pyrgulopsis hubbsi", "Pyrgulopsis humboldtensis", "Pyrgulopsis sathos", "Pyrgulopsis wongi","Pyrgulopsis imperialis", "Pyrgulopsis sublata", "Pyrgulopsis landyei", "Pyrgulopsis basiglans", "Pyrgulopsis lockensis", "Pyrgulopsis anguina", "Pyrgulopsis pisteri", "Tryonia ericae", "Pyrgulopsis avernalis", "Pyrgulopsis carinifera", "Tryonia monitorae", "Pyrgulopsis neritella", "Pyrgulopsis militaris", "Pyrgulopsis serrata", "Pyrgulopsis variegata", "Pyrgulopsis micrococcus", "Pyrgulopsis pictilis", "Pyrgulopsis merriami", "Pyrgulopsis aurata", "Tryonia elata","Fluminicola dalli", "Pyrgulopsis sadai", "Pyrgulopsis bifurcata", "Juga interioris", "Pyrgulopsis turbatrix", "Pyrgulopsis anatina", "Pyrgulopsis umbilicata", "Pyrgulopsis sulcata", "Tryonia angulata", "Pyrgulopsis deaconi", "Pyrgulopsis limaria", "Eremopyrgus eganensis", "Pyrgulopsis sterilis", "Pyrgulopsis orbiculata", "Pyrgulopsis cruciglans", "Fluminicola turbiniformis", "Pyrgulopsis millenaria", "Pyrgulopsis hovinghi", "Pyrgulopsis vinyardi", "Fluminicola virginius")
 
 nv_sgcn <- taxa_meta_density2 %>%
-  filter(scientificName%in%nv.sgcn.list)%>%
-  mutate(state = "NV")
+  filter(scientificName%in%nv.sgcn.list)
+
+nv_sgcn<- nv_sgcn%>%
+  mutate(state = rep("NV", nrow(nv_sgcn)))
 
 sort(unique(nv_sgcn$scientificName))
 ```
@@ -836,12 +848,13 @@ sgcn_states <- all_sgcn%>%
 
 all_sgcn_states <- merge(all_sgcn, sgcn_states)%>% #merge with the full SGCN dataset
   select(!state)%>% #drop the old "state" column
+  filter(!splitCount == 0)%>% #drop taxa with split counts of 0
   distinct() #drop duplicate rows
   
 sort(unique(all_sgcn_states$scientificName)) #return list of all SGCN taxa present in the data
 ```
 
-Total of 24 SGCNs that are listed in different states. **NOTE - many of these taxa are present in the data but have splitCounts/densities of 0... When dropping taxa with splitCount == 0, only have 10 SGCNs in the dataset**
+Total of 20 SGCNs that are listed in different states. **NOTE - some of these taxa (4) are listed in the dataset but have splitCounts of 0 - dropping those here. **
 
 Save this file for future analysis: 
 
