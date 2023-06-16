@@ -11,4 +11,12 @@ Data and code repository for Utah Aquatic Insect Decline project. Project object
   * UTinvert_analysis.Rmd - performs all plotting and analysis - inputs are cleaned data .csv's (stored in cleaned_data folder), output plots are stored in the "plots" folder. 
   
 
+**Organization:**
+
+
+  * All cleaned datasets are stored in the *cleaned_data* folder. The *FileInfo.MD* document in that folder has a brief description of each file. 
+  
+  * All figures produced by both scripts are stored in the *plots* folder. Figures showing the distribution, density trends, and elevational distribution of SGCNs from Utah and adjacent states are in the *sgcn_plots* folder. 
+  
+
 

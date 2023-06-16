@@ -18,4 +18,8 @@ This document provides background info on each of the cleaned datasets in the "c
   
   7. **taxa_densities.csv** has sample metadata and taxonomic information for each taxa in each sample, along with abundance and density (sample abundance/sample area) for that taxa. No corrections have been made to account for differences in sampling method, sampling habitat, or sampling agency. Only non-insect adults (plus coleoptera and himiptera adults), larvae, and pupae are included. Samples classified to all taxonomic levels are included. All samples with a lab split of < 0.055 have been removed.
   
+  8. **high_zapada_info.csv** has site info (coordinates, elevations, stream names, etc.) for all sites over 3000m with *Zapada* observations. 
+  
+  9. **sgcns.csv** has taxonomic info, sample metadata, taxa density, site elevation, and listing states for SGCN taxa from Utah, Colorado, Arizona, Nevda, Idaho, and Wyoming that are present in the dataset. 
+  
   
