@@ -18,6 +18,9 @@ library(broom)
 library(sp)
 library(geonames) #for getting elevation data
 library(rgbif) #for getting elevation data
+
+library(rgdal) #for reading in shapefiles
+library(sf) #for intersecting points with shapefile
 ```
 
 
@@ -861,6 +864,175 @@ Save this file for future analysis:
 ```{r}
 write.csv(all_sgcn_states,"cleaned_data/sgcns.csv")
 ```
+
+### 6. Adding Utah Ecoregion Data; Calculating Ecoregion-level diversity metrics:
+
+First, read in shapefile of UT ecoregions and extract site coordinates:
+
+```{r}
+ut_er <- readOGR("gis/data/ut_eco_l3")%>% #read in shapefile
+  spTransform(("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")) #Update CRS
+  
+
+site_xy <- metadata %>%
+  select(siteId, siteLongitude, siteLatitude) #extract site coords
+```
+
+Convert site coordinates to spatial coordinates: 
+
+```{r}
+xy <- site_xy[,c(2,3)] #extract lat/long cols
+
+spdf <- SpatialPointsDataFrame(coords = xy, data = site_xy,#create spatialPoints DF using lat/long cols
+                               proj4string = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")) #updating projection
+```
+
+Intersect points with shapefile: 
+
+```{r}
+site_ers <- over(spdf, ut_er)%>%
+  bind_cols(site_xy) #add site coordinates back to dataframe
+```
+
+Check with plotting: 
+
+```{r}
+ut_er@data$id <- rownames(ut_er@data) #add ID column for join
+
+ut_er_df <- fortify(ut_er)%>% #transform ecoregion spatialPolygons Dataframe into a dataframe
+  left_join(ut_er@data, by = "id") #add ecoregion data back in
+
+ggplot(ut_er_df, aes(x=long, y = lat, group = group, fill = US_L3NAME))+ #plot ecoregions, fill based on region
+  geom_polygon(color = "black"
+               #, alpha = 0.25
+               )+ #polygon aesthetics - adjusting line colors and transparency
+  theme_void()+
+#  geom_point(data = site_ers, aes(x = siteLongitude, y = siteLatitude, group = NULL, color = US_L3NAME, fill = NULL), size = 0.5)+ #add points for each site, color-coded by ecoregion
+  labs(color = "Ecoregion Name", fill = "Ecoregion Name") #updating legend title
+```
+
+Save plot (w/out points):
+
+```{r}
+ggsave("plots/ut_ecoregions.pdf", plot = last_plot(), device = "pdf", units = "in", width = 6.5, height = 5.5, dpi = "retina")
+```
+
+
+
+Success! Now, extract ecoregion info and add back to primary dataset: 
+
+```{r}
+ecoregions <- site_ers %>%
+  select(siteId, US_L3CODE, US_L3NAME)%>%
+  rename(ecoCode = US_L3CODE, ecoName = US_L3NAME)%>% #extract ecoregion ID and name
+  distinct()
+
+#Save for future use:
+write.csv(ecoregions,"cleaned_data/site_ecoregions.csv")
+```
+
+Add to richness dataset: 
+
+```{r}
+richness_eco <- merge(site_yr_richness2, ecoregions)
+#Save: 
+write.csv(richness_eco, "cleaned_data/eco_richness.csv")
+```
+
+Add to density dataset: 
+
+```{r}
+density_eco <- merge(taxa_meta_density2, ecoregions)
+#Save: 
+write.csv(density_eco, "cleaned_data/eco_density.csv")
+```
+
+#### A. Cleaning: Drop samples with <300 individuals; subsample those with >300 individuals to 300 individuals: 
+
+First, add identify samples with <300 observations: 
+
+```{r}
+under300 <- density_eco %>%
+  group_by(sampleId)%>%
+  summarise(n_indiv = sum(splitCount))%>%
+  filter(n_indiv < 300)%>%
+  distinct()
+```
+
+Drop these samples from the dataset: 
+
+```{r}
+density_eco_300 <- density_eco %>%
+  filter(!sampleId%in%under300$sampleId)
+head(density_eco_300)
+```
+
+Randomly subsample the remaining samples to 300 individuals: 
+
+First, make new dataframe with a row for each individual in each sample (i.e. for sample A with 6 observations of organism B, want 6 rows with "organism B"): 
+
+```{r}
+sampleId.reps <- rep(density_eco_300$sampleId, density_eco_300$splitCount) #repeat sample ID for # in splitCount col
+taxaName.reps <- rep(density_eco_300$scientificName, density_eco_300$splitCount) #repeat taxa name for # in splitCount col
+taxa_counts <- data.frame(sampleId.reps, taxaName.reps) #create new dataframe with these objects
+```
+
+Randomly select 300 observations from within each sample ID: 
+
+```{r}
+set.seed(123) #for reproducibility
+
+sample_subsets <- taxa_counts %>%
+  group_by(sampleId.reps)%>% #group by sample ID
+  slice_sample(n = 300)%>% #select 300 random rows from within that sample. 
+  arrange(sampleId.reps, taxaName.reps)
+
+nrow(sample_subsets)/length(unique(sample_subsets$sampleId.reps)) #double checking that correct no. rows were selected
+```
+
+Distill this dataframe back to 1 row for each sample + taxa combo, column for splitCount for that taxa
+
+```{r}
+subsets_short <- sample_subsets %>%
+  group_by_all()%>% #group by all columns
+  count()%>% #count # duplicate columns and add to new col
+  rename(splitCount = n, sampleId = sampleId.reps, scientificName = taxaName.reps)  #updating column names for merge
+```
+
+Add sample metadata back in: 
+
+```{r}
+eco_meta <- density_eco_300%>%
+  select(1:4, 21:37, -taxa_density)%>% #select metadata columns from ecoregion density DF
+  distinct() #remove duplicate rows
+
+subsets_eco <- merge(subsets_short, eco_meta)%>% #merge with subsetted taxonomic data
+  mutate(yr = year(sampleDate)) #add year column
+```
+
+#### B. Calculate ecoregion-level richness and density for each year: 
+
+Calculate density, then count # unique species and calculate avg. density in each ecoregion in each year: 
+
+```{r}
+eco_r_d <- subsets_eco %>%
+  mutate(density = (splitCount/(labSplit*fieldSplit))/area)%>% #Density = # individuals/ls*fs / area sampled
+  group_by(ecoName, yr)%>% #group by ecoregion name and year
+  summarise(ecoCode = unique(ecoCode), #add ecoregion code back in
+            richness = length(unique(scientificName)), #count no unique taxa
+            density_xbar = mean(density), #calculate mean density
+            elev_xbar = mean(elev_m), #calculate mean sample elevation
+            n_samples = length(unique(sampleId)))%>% #count number of samples per year*ecoregion
+  mutate(richness_perSample = richness/n_samples, #calculate richness per sample
+         density_perSample = density_xbar/n_samples) #calculate density per sample
+```
+
+Save: 
+
+```{r}
+write.csv(eco_r_d, "cleaned_data/eco_richness_density.csv")
+```
+
 
 ---
 ---

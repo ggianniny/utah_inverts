@@ -1478,5 +1478,131 @@ ggsave("plots/dens_samplemethod.pdf", dens.samplemethod, device = "pdf", units =
 
 log10(Density) has a significant negative correlation with lab split, sample proportion (lab split * field split), and area. The R2 for lab split and sample proportion are fairly hight (0.55), while the R2 for area is very low (0.1). 
 
+## IV. Ecoregion-level analyses
+
+Read in ecoregion density/richness info:
+
+```{r}
+eco_r_d <- read.csv("cleaned_data/eco_richness_density.csv")
+```
+
+### A. Are there trends in richness over time within each ecoregion
+
+Check distribution: 
+
+```{r}
+ggplot(eco_r_d, aes(x = log10(richness_perSample)))+
+  geom_histogram()
+```
+
+Strong left skew; use log transform
+
+
+**Nested LM for richness (per site) ~ year:** 
+
+Nest data by ecoregion: 
+
+```{r}
+eco_nested <- eco_r_d%>%
+  nest(data = -ecoName)
+```
+
+Run a model for each taxa separately, return a summary table with model results for each taxa: 
+
+```{r}
+ecoRichness_models <- eco_nested %>%
+  mutate(model = purrr::map(data, ~lm(log10(richness_perSample)~yr, data = .)%>%
+                       tidy))%>%
+  unnest(model)%>%
+  filter(term == "yr")
+ecoRichness_models
+```
+
+Significant decreases in richness in the Central Basin & Range; CO Plateaus. Significant increase in richness in WY basin. 
+
+Visualization: 
+
+```{r}
+library(ggpp)
+p.vals <- ecoRichness_models %>%
+  select(ecoName, p.value)
+
+eco_r_pvals <- merge(eco_r_d, p.vals)
+
+eco.richness <- ggplot(eco_r_pvals, aes(x = yr, y = log10(richness_perSample), color = ecoName))+
+  geom_point()+
+  geom_smooth(method = "lm", se = F)+
+  geom_text_npc(aes(npcx = 0.9, npcy = 0.1, label = paste( "P = ",round(p.value, 2), sep = "")))+
+  theme_classic()+
+  facet_wrap(~ecoName, scales = "free_x", nrow = 2, ncol = 4)+
+  labs(x = "Year", y = "log10(Per-sample richness)", color = "Ecoregion Name")+
+  theme(legend.position = "none", 
+        axis.title = element_text(size = 10, face = "bold"), 
+        strip.text = element_text(size = 8))
+eco.richness
+```
+
+Save: 
+
+```{r}
+ggsave("plots/ecoregion_richness.pdf", eco.richness, device = "pdf", units = "in", width = 8, height = 5, dpi = "retina")
+```
+
+### B. Are there trends in density over time within each ecoregion
+
+Check distribution: 
+
+```{r}
+ggplot(eco_r_d, aes(x = log10(density_perSample)))+
+  geom_histogram()
+```
+
+Strong left skew; use log transform
+
+
+**Nested LM for richness (per site) ~ year:** 
+
+
+Run a model for each ecoregion separately, return a summary table with model results for each ecoregion: 
+
+```{r}
+ecoDens_models <- eco_nested %>%
+  mutate(model = purrr::map(data, ~lm(log10(density_perSample)~yr, data = .)%>%
+                       tidy))%>%
+  unnest(model)%>%
+  filter(term == "yr")
+ecoDens_models
+```
+
+Significant decreases in richness in the Central Basin & Range; CO Plateaus. Significant increase in richness in WY basin. 
+
+Visualization: 
+
+```{r}
+library(ggpp)
+rp.vals <- ecoDens_models %>%
+  select(ecoName, p.value)
+
+eco_d_pvals <- merge(eco_r_d, rp.vals)
+
+eco.density <- ggplot(eco_d_pvals, aes(x = yr, y = log10(density_perSample), color = ecoName))+
+  geom_point()+
+  geom_smooth(method = "lm", se = F)+
+  geom_text_npc(aes(npcx = 0.9, npcy = 0.1, label = paste( "P = ",round(p.value, 2), sep = "")))+
+  theme_classic()+
+  facet_wrap(~ecoName, scales = "free_x", nrow = 2, ncol = 4)+
+  labs(x = "Year", y = "log10(Per-sample density)", color = "Ecoregion Name")+
+  theme(legend.position = "none", 
+        axis.title = element_text(size = 10, face = "bold"), 
+        strip.text = element_text(size = 8))
+eco.density
+```
+
+Save: 
+
+```{r}
+ggsave("plots/ecoregion_density.pdf", eco.density, device = "pdf", units = "in", width = 8, height = 5, dpi = "retina")
+```
+
 
 

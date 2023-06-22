@@ -22,4 +22,8 @@ This document provides background info on each of the cleaned datasets in the "c
   
   9. **sgcns.csv** has taxonomic info, sample metadata, taxa density, site elevation, and listing states for SGCN taxa from Utah, Colorado, Arizona, Nevda, Idaho, and Wyoming that are present in the dataset. 
   
+  10. **site_ecoregions.csv** has sample metadata and taxonomic data along with added columns for ecoregion name and ecoregion ID.
+  
+  11. **eco_richness_density.csv** has taxonomic richness and density calculations for each utah ecoregion and year combo. Samples with fewer than 300 observations have been dropped from the dataset, and samples with over 300 observations have been randomly subsampled to 300 individuals. In addition to overall richness and mean density, there are also columns for richness per site and mean density per site to account for variation in # sites sampled per year. 
+  
   
