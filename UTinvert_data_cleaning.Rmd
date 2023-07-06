@@ -222,7 +222,7 @@ ggplot(metadata, aes(x = labSplit))+
   scale_y_continuous("Proportion of samples w/ Lab Split > x", position = "left", sec.axis = sec_axis(name = "# Samples w/ Lab Split > x", trans = ~.x*n))+
   theme_linedraw()+
   labs(x ="Lab Split")+
-  geom_vline(xintercept = 0.1, linetype = "dashed")
+  geom_vline(xintercept = 0.055, linetype = "dashed")
   
 ```
 
@@ -230,7 +230,7 @@ For now - using the same cutoff as Rumschlag et al:
 
 ```{r}
 taxa_meta_labsplit <- taxa_meta %>%
-  filter(!labSplit < 0.1) #remove all observations with labSplit < 0.055
+  filter(!labSplit < 0.055) #remove all observations with labSplit < 0.055
 ```
 
 Using this cutoff means we lose `r round(((nrow(taxa_meta)-nrow(taxa_meta_labsplit))/nrow(taxa_meta))*100, 2)` percent of observations (`r nrow(taxa_meta)-nrow(taxa_meta_labsplit)` individual observations). 
@@ -380,7 +380,7 @@ Dashed red line = Genus - all samples with smaller taxonomic ID's are classified
 
 If we just used observations classified to genus or lower, we would lose `r round((nrow(filter(taxa_meta_labsplit, levelId < 23)) / nrow(taxa_meta_labsplit))*100, 2)` percent of the data, leaving  `r nrow(filter(taxa_meta_labsplit, levelId >= 23))` observations remaining. 
 
-#### D. Checking area ranges; removing samples w/out area:
+#### D. Checking area ranges and applying area filters:
 
 First pass - basic summary of sample area: 
 
@@ -408,12 +408,15 @@ ggplot(filter(metadata, area <50), aes(x = area))+
   labs(x = "Sample Area, m2", y = "Count")
 ```
 
-Much more believable. Removing samples with no area and with area == 100 from the dataset: 
+Much more believable. 
+
+**Final Filter for now:** Removing samples with no area,  with area< 0.05m & >5m from the dataset (same cutoffs used by Rumschlag et al: 
 
 ```{r}
 taxa_meta_area <- taxa_meta_stage%>%
   filter(!is.na(area), 
-         !area == 100)
+         !area <0.05, 
+         !area >5)
 ```
 
 How many samples with area > "x":
@@ -426,17 +429,35 @@ ggplot(filter(metadata, area<50), aes(x = area))+
   scale_y_continuous("Proportion of samples w/ Area > x", position = "left", sec.axis = sec_axis(name = "# Samples w/ Area > x", trans = ~.x*n))+
   theme_linedraw()+
   labs(x ="Sample Area")+
-  geom_vline(xintercept = 1, linetype = "dashed")+
-  geom_vline(xintercept = 0.08, linetype = "dashed")
+  geom_vline(xintercept = 5, linetype = "dashed")+
+  geom_vline(xintercept = 0.05, linetype = "dashed")
 ```
 
+#### E. Checking sample date ranges and applying filters:
 
-#### E. Calculate Density: 
+First, visualization of sample dates:
+
+```{r}
+ggplot(metadata, aes(x = year(sampleDate)))+
+  geom_histogram(color = "black", fill = "grey", bins = 70)+
+  theme_classic()
+```
+
+A few samples from before 1990, vast majority post-1990. 
+
+**Rule for now:** Drop all samples pre-1990:
+
+```{r}
+taxa_meta_date <- taxa_meta_area %>%
+  filter(!year(sampleDate) <1990)
+```
+
+#### F. Calculate Density: 
 
 Calculate density for each observation - density = (# organisms/(labSplit*fieldSplit))/area sampled
 
 ```{r}
-taxa_meta_density <- taxa_meta_area %>%
+taxa_meta_density <- taxa_meta_date %>%
   mutate(taxa_density = (splitCount/(labSplit*fieldSplit))/area)
 ```
 
@@ -904,14 +925,14 @@ ut_er_df <- fortify(ut_er)%>% #transform ecoregion spatialPolygons Dataframe int
 
 ggplot(ut_er_df, aes(x=long, y = lat, group = group, fill = US_L3NAME))+ #plot ecoregions, fill based on region
   geom_polygon(color = "black"
-               #, alpha = 0.25
+               , alpha = 0.25
                )+ #polygon aesthetics - adjusting line colors and transparency
   theme_void()+
-#  geom_point(data = site_ers, aes(x = siteLongitude, y = siteLatitude, group = NULL, color = US_L3NAME, fill = NULL), size = 0.5)+ #add points for each site, color-coded by ecoregion
+ geom_point(data = site_ers, aes(x = siteLongitude, y = siteLatitude, group = NULL, color = US_L3NAME, fill = NULL), size = 0.5)+ #add points for each site, color-coded by ecoregion
   labs(color = "Ecoregion Name", fill = "Ecoregion Name") #updating legend title
 ```
 
-Save plot (w/out points):
+Save plot (w/ points):
 
 ```{r}
 ggsave("plots/ut_ecoregions.pdf", plot = last_plot(), device = "pdf", units = "in", width = 6.5, height = 5.5, dpi = "retina")
@@ -947,23 +968,28 @@ density_eco <- merge(taxa_meta_density2, ecoregions)
 write.csv(density_eco, "cleaned_data/eco_density.csv")
 ```
 
-#### A. Cleaning: Drop samples with <300 individuals; subsample those with >300 individuals to 300 individuals: 
+#### A. Data Cleaning
+
+##### i. Drop samples with <300 individuals; subsample those with >300 individuals to 300 individuals: 
 
 First, add identify samples with <300 observations: 
 
 ```{r}
 under300 <- density_eco %>%
-  group_by(sampleId)%>%
-  summarise(n_indiv = sum(splitCount))%>%
-  filter(n_indiv < 300)%>%
-  distinct()
+  group_by(sampleId)%>% #group by sampleId
+  summarise(n_indiv = sum(splitCount))%>% #count total individuals in sample
+  filter(n_indiv < 300)%>% #extract samples with fewer than 300 individuals
+  distinct() #remove duplicate rows
 ```
 
-Drop these samples from the dataset: 
+Drop these samples from the dataset; calculate a total density metric before subsampling to 300 individuals:
 
 ```{r}
 density_eco_300 <- density_eco %>%
-  filter(!sampleId%in%under300$sampleId)
+  filter(!sampleId%in%under300$sampleId)%>% #drop sample ID's in list created above
+  group_by(sampleId)%>% #group by sample ID
+  mutate(tot_dens = sum(taxa_density))%>% #calculate total density in each sample
+  ungroup() #ungroup to retain all cols
 head(density_eco_300)
 ```
 
@@ -1003,24 +1029,126 @@ Add sample metadata back in:
 
 ```{r}
 eco_meta <- density_eco_300%>%
-  select(1:4, 21:37, -taxa_density)%>% #select metadata columns from ecoregion density DF
+  select(1:4, 21:38, -taxa_density)%>% #select metadata columns from ecoregion density DF (including total sample density calculated before sub-sampling)
   distinct() #remove duplicate rows
 
 subsets_eco <- merge(subsets_short, eco_meta)%>% #merge with subsetted taxonomic data
   mutate(yr = year(sampleDate)) #add year column
 ```
 
-#### B. Calculate ecoregion-level richness and density for each year: 
+##### ii. Drop years with only a few sites: 
 
-Calculate density, then count # unique species and calculate avg. density in each ecoregion in each year: 
+**NOTE - for now, using minimum cutoff of 10 sites for each ecoregion*year combo - can adjust as needed.**
+
+Change cutoff value here:
 
 ```{r}
-eco_r_d <- subsets_eco %>%
-  mutate(density = (splitCount/(labSplit*fieldSplit))/area)%>% #Density = # individuals/ls*fs / area sampled
+site.cutoff <- 10
+```
+
+First, check how many ecoregion * year combos have fewer sites than the cutoff: 
+
+```{r}
+sites_perYr <- subsets_eco %>%
+  group_by(ecoName, yr)%>% #group by ecoregion and year
+  summarise(n_sites = length(unique(siteId)))%>% #count n sites in each ecoregion in each year
+  filter(n_sites < site.cutoff)%>% #filter out rows w fewer sites than threshold specified above
+  mutate(to_drop =paste(ecoName, yr, sep = " ")) #create combined ecoregion+year column 
+```
+
+`r nrow(sites_perYr)` ecoregion * year combos with fewer sites than the threshold.
+
+Drop ecoregion * yr combos below the cutoff: 
+
+```{r}
+subsets_eco1 <- subsets_eco %>%
+  mutate(eco_yr = paste(ecoName, yr, sep = " "))%>% #add ecoregion+year column 
+  filter(!eco_yr%in%sites_perYr$to_drop)%>%#drop ecoregion+year combos in sites_perYr
+  select(!eco_yr) #remove extra ecoregion+year column 
+
+unique(subsets_eco1$ecoName)
+```
+
+
+##### iii. Extract primary ecoregions: Wasatch/Uinta, Co Plateau, Central Basin & Range:
+
+Extract data for three primary UT Ecoregions: 
+
+```{r}
+subsets_eco2 <- subsets_eco1 %>%
+  filter(ecoCode == 19|ecoCode == 20|ecoCode == 13) #Extract rows with eco codes corresponding to 3 primary UT ecoregions
+```
+
+##### iv. Plotting to check for undue influence of individual sites/years: 
+
+Check for outlier years in density/richness by plotting richness/density for each site over time, faceted by ecoregion. 
+
+First, need to calculate richness and total density for each sample: 
+
+```{r}
+ecoSite_means <- subsets_eco2 %>%
+  group_by(sampleId)%>% #group by sample ID
+  mutate(tot_dens = unique(tot_dens), 
+         richness = length(unique(scientificName)))%>% #calculate total density and richness for each sample
+  ungroup()%>% #ungroup to retain all columns
+  group_by(siteId, yr)%>% #group by siteId and year
+  summarise(
+    dens_xbar = mean(tot_dens), 
+    richness_xbar = mean(richness), #calculate mean density and richness for each site*year
+    ecoName = unique(ecoName) #retain ecoregion name
+  )
+```
+
+**NOTE** - because we subsampled to 300 individuals, the total density at each site will be the same for sites with the same lab split/field split/sample areas - so may not be a useful metric. 
+
+On to plotting:
+
+**Density:**
+
+```{r}
+dens.eco.site <- ggplot(ecoSite_means, aes(x = yr, y = log10(dens_xbar), group = factor(siteId), color = ecoName))+
+  geom_point()+
+  geom_line()+
+  facet_wrap(~ecoName)+
+  theme_classic()+
+  theme(legend.position = "none")+
+  labs(x = "", y = "log10(Mean density, individuals/m2)")
+dens.eco.site
+```
+
+**Richness:**
+
+```{r}
+rich.eco.site <- ggplot(ecoSite_means, aes(x = yr, y = log10(richness_xbar), group = factor(siteId), color = ecoName))+
+  geom_point()+
+  geom_line()+
+  facet_wrap(~ecoName)+
+  theme_classic()+
+  theme(legend.position = "none")+
+  labs(x = "Year", y = "log10(Mean Taxonomic Richness)")
+rich.eco.site
+```
+
+Combine plots and save:
+
+```{r}
+eco.site.comb <- dens.eco.site/rich.eco.site
+eco.site.comb
+
+#save:
+ggsave("plots/ecoSite_richness_density.jpg", eco.site.comb, device = "jpeg", units = "in", height = 9, width = 6.5, dpi = "retina")
+```
+
+#### B. Calculate ecoregion-level richness and density for each year: 
+
+Count # unique species and calculate avg. total sample density in each ecoregion in each year: 
+
+```{r}
+eco_r_d <- subsets_eco2 %>%
   group_by(ecoName, yr)%>% #group by ecoregion name and year
   summarise(ecoCode = unique(ecoCode), #add ecoregion code back in
             richness = length(unique(scientificName)), #count no unique taxa
-            density_xbar = mean(density), #calculate mean density
+            density_xbar = mean(tot_dens), #calculate mean density
             elev_xbar = mean(elev_m), #calculate mean sample elevation
             n_samples = length(unique(sampleId)))%>% #count number of samples per year*ecoregion
   mutate(richness_perSample = richness/n_samples, #calculate richness per sample
@@ -1033,6 +1161,43 @@ Save:
 write.csv(eco_r_d, "cleaned_data/eco_richness_density.csv")
 ```
 
+### 7. State-wide richness and density for each year:
+
+#### A. Data Cleaning
+
+##### i. Drop samples with <300 individuals; subsample those with >300 individuals to 300 individuals
+
+Already completed above for ecoregion-level analyses - use "subsets_eco" as starting point
+
+##### ii. Drop years with 10 or fewer sites: 
+
+```{r}
+statewide_10plus <- subsets_eco %>%
+  group_by(yr)%>% #group by year
+  mutate(n_sites = length(unique(siteId)))%>% #count n unique sites surveyed in that year
+  ungroup()%>% #ungroup to retain all columns
+  filter(!n_sites<10) #drop all years with fewer than 10 sites
+```
+
+#### B. Calculate state-wide density and richness by year:
+
+Group by year and count unique taxa, calculate mean total sample density for each year:
+
+```{r}
+statewide_yearly <- statewide_10plus %>%
+  group_by(yr)%>%
+  summarise(richness = length(unique(scientificName)), 
+            dens_xbar = mean(tot_dens), 
+            n_sites = unique(n_sites), 
+            richness_persite = richness/n_sites, 
+            dens_persite = dens_xbar/n_sites)
+```
+
+Save this dataframe for future analysis: 
+
+```{r}
+write.csv(statewide_yearly, "cleaned_data/statewide_richness_density.csv")
+```
 
 ---
 ---

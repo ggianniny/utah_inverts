@@ -8,7 +8,9 @@ Data and code repository for Utah Aquatic Insect Decline project. Project object
 
   * UTinvert_data_cleaning.Rmd - performs all data cleaning operations - inputs are raw data file .csv's (stored in raw_data folder), outputs are cleaned data file .csv's (stored in cleaned_data folder). 
   
-  * UTinvert_analysis.Rmd - performs all plotting and analysis - inputs are cleaned data .csv's (stored in cleaned_data folder), output plots are stored in the "plots" folder. 
+  * UTinvert_exploration.Rmd - performs in-depth data exploration and initial analyses - inputs are cleaned data .csv's (stored in cleaned_data folder), output plots are stored in the "plots" folder. 
+  
+  * UTinvert_modeling.Rmd - performs modeling based on patterns observed in UTinvert_exploration.Rmd. Inputs are cleaned data .csv's (stored in cleaned_data folder), output plots are stored in the "plots" folder. 
   
 
 **Organization:**
