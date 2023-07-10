@@ -26,4 +26,8 @@ This document provides background info on each of the cleaned datasets in the "c
   
   11. **eco_richness_density.csv** has taxonomic richness and density calculations for each utah ecoregion and year combo. Samples with fewer than 300 observations have been dropped from the dataset, and samples with over 300 observations have been randomly subsampled to 300 individuals. In addition to overall richness and mean density, there are also columns for richness per site and mean density per site to account for variation in # sites sampled per year. 
   
+  12. **subsetted_full.csv** has sample metadata and taxonomic info, ecoregion data, and elevation data. Samples with <300 individuals have been dropped, and the remaining samples have been randomly subsetted to 300 individuals. 
+  
+  13. **statewide_richness_density.csv** has taxonomic richness and density calculations for the entire state for each year in the record. Samples with fewer than 300 observations have been dropped from the dataset, and samples with over 300 observations have been randomly subsampled to 300 individuals. In addition to overall richness and mean density, there are also columns for richness per site and mean density per site to account for variation in # sites sampled per year. 
+  
   

@@ -1036,6 +1036,12 @@ subsets_eco <- merge(subsets_short, eco_meta)%>% #merge with subsetted taxonomic
   mutate(yr = year(sampleDate)) #add year column
 ```
 
+Save this file for future analyses:
+
+```{r}
+write.csv(subsets_eco, "cleaned_data/subsetted_full.csv")
+```
+
 ##### ii. Drop years with only a few sites: 
 
 **NOTE - for now, using minimum cutoff of 10 sites for each ecoregion*year combo - can adjust as needed.**
@@ -1099,7 +1105,6 @@ ecoSite_means <- subsets_eco2 %>%
   )
 ```
 
-**NOTE** - because we subsampled to 300 individuals, the total density at each site will be the same for sites with the same lab split/field split/sample areas - so may not be a useful metric. 
 
 On to plotting:
 
@@ -1188,9 +1193,9 @@ statewide_yearly <- statewide_10plus %>%
   group_by(yr)%>%
   summarise(richness = length(unique(scientificName)), 
             dens_xbar = mean(tot_dens), 
-            n_sites = unique(n_sites), 
-            richness_persite = richness/n_sites, 
-            dens_persite = dens_xbar/n_sites)
+            n_samples = length(unique(sampleId)), 
+            richness_perSample = richness/n_samples, 
+            dens_perSample = dens_xbar/n_samples)
 ```
 
 Save this dataframe for future analysis: 
