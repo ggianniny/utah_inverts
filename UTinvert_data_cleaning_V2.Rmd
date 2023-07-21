@@ -1,0 +1,163 @@
+---
+title: "UT Invert Data Cleaning V2"
+author: "Gordon Gianniny"
+date: "2023-07-17"
+output: html_document
+---
+
+```{r include=FALSE}
+#Loading packages:
+library(tidyverse) #For data wrangling
+library(lubridate) #For working with dates
+library(ggplot2) #Plotting
+library(RColorBrewer)
+library(patchwork)
+library(stringr)
+library(vegan)
+library(broom)
+library(sp)
+library(geonames) #for getting elevation data
+library(rgbif) #for getting elevation data
+
+library(rgdal) #for reading in shapefiles
+library(sf) #for intersecting points with shapefile
+```
+
+This script is an updated version of *UTinvert_data_cleaning.Rmd* that simplifies the data cleaning steps in that script. Data cleaning steps are as follows: 
+
+  * Merge sample data and sample metadata
+  
+  * Data filtering:
+  
+    * Drop samples with lab split <0.05
+    
+    * Drop samples with sample area >5 or less than 0.05m
+    
+    * Drop samples from before 1990
+    
+    * Drop eggs and exuvia; count adults for non-insects & insects in orders coleoptera and hemiptera
+    
+    * Drop all individuals not identified to genus
+    
+  * Calculate total sample density and richness
+    
+  * Add additional site info: 
+  
+    * Elevation and elevation bands
+    
+    * Ecoregions
+    
+  * Normalize data for state-wide, ecoregion, and elevation band analyses
+  
+    * Drop samples with < 300 individuals
+    
+    * Randomly subsample remaining samples to 300 individuals
+    
+    * For each grouping: drop years with < 10 sites:
+    
+      * State-wide
+      
+      * Ecoregions
+      
+      * Elevation bands
+      
+The two input data files are: 
+
+  * **Utah_Sample_Data_Final_comids.csv** - sample metadata for all samples. Key columns are:
+  
+    * sampleId (unique to each sample), customerAbbreviation (unique to each sampling agency), siteID (unique to each site), siteLongitude and siteLatitude, sampleDate, sampleType, sampleMethod, sampleMethodId, habitatName, habitatID, area, fieldSplit, labSplit, mesh, COMID (unique to each stream segment)
+
+  * **Utah_Taxa_Data_Final.csv** - taxa data for all samples. Key columns are: 
+  
+    * organismId (unique to each organism), sampleId, taxonomyId (unique to each taxa), levelId (unique to each classification level), levelName (finest level of classification), lifeStageId (unique to each lifestage), lifeStage, lifeStageAbbreviation, splitCount, labSplit, fieldSplit
+    
+Output files are: 
+
+  * **abc**
+  
+  * **d**
+
+## I. Merge sample data and sample metadata
+
+Read in the datasets, select key columns listed in intro: *(Note - also adjusting date formatting of sampleDate column to fix dates in the mid-90s coming in as dates in the future - e.g. instead of 1965-01-01, 2065-01-01)*
+
+```{r}
+metadata <- read.csv("raw_data/Utah_Sample_Data_Final_comids.csv")%>% #read in datafile
+  select("sampleId" , "customerAbbreviation", "siteId", "siteLongitude", "siteLatitude", "sampleDate", "sampleType", "sampleMethod", "sampleMethodId", "habitatName", "habitatId", "area", "fieldSplit", "labSplit", "mesh", "COMID" )%>% #Selecting desired columns
+  mutate(sampleDate = as.Date(sampleDate, format ="%m/%d/%y"),  #recode as date
+         flag = ifelse(
+           sampleDate > today(), 
+           "N", "Y"), #flag all rows with dates greater than today
+         sampleDate = as.character(sampleDate), #convert back to character to substring
+         sampleDate= ifelse(flag == "N", str_replace(sampleDate, "20", "19"), sampleDate), #substring: correct century (replace "20" with "19") for all flagged rows 
+         sampleDate = ymd(sampleDate),  #convert back to date format. 
+         yr = year(sampleDate)) #add year column
+           
+
+taxa <- read.csv("raw_data/Utah_Taxa_Data_Final.csv")%>% #read in datafile
+  select("organismId" , "sampleId", "taxonomyId", "scientificName", "levelId", "levelName", "phylum", "class", "order", "family", "subFamily", "genus", "species",  "lifeStageId", "lifeStage", "lifeStageAbbreviation", "splitCount", "labSplit", "fieldSplit") #selecting desired columns
+```
+
+Merge the dataframes and re-code relevant colums as different classes: result should be 185,366 rows x 32 columns
+
+```{r}
+taxa_meta <- merge(taxa, metadata)%>%#merge
+  mutate(
+    customerAbbreviation = as.factor(customerAbbreviation), 
+    levelName = as.factor(levelName), #recoding categorical columns as factors
+    lifeStage = as.factor(lifeStage), #recoding categorical columns as factors
+    #sampleDate = mdy(sampleDate), #recoding date column in r date format
+    sampleType = as.factor(sampleType), #recoding categorical columns as factors
+    sampleMethod = as.factor(sampleMethod), #recoding categorical columns as factors
+    habitatName = as.factor(habitatName), #recoding categorical columns as factors
+    habitatId = as.factor(habitatId)#recoding categorical columns as factors
+  )
+  
+dim(taxa_meta) #check dimensions 
+
+range(taxa_meta$sampleDate) #confirming that date range is believable
+```
+
+
+```{r}
+metadata%>%
+  filter(yr >1990)%>%
+ggplot(aes(x = yr))+
+  geom_histogram()+
+  geom_hline(aes(yintercept = 10), linetype = "dashed", color = "red")
+```
+
+## II. Data filtering:
+  
+### A. Drop samples with sample proportion (lab split * field split) <0.05
+    
+### B. Drop samples with sample area >5 or less than 0.05m
+    
+### C. Drop samples from before 1990
+    
+### D. Drop eggs and exuvia; count adults for non-insects & insects in orders coleoptera and hemiptera
+    
+### E. Drop all individuals not identified to genus
+    
+## III. Calculate total sample density and richness
+    
+## IV. Add additional site info: 
+  
+### A. Elevation and elevation bands
+    
+### B. Ecoregions
+    
+## V. Normalize data for state-wide, ecoregion, and elevation band analyses
+  
+### A. Drop samples with < 300 individuals
+    
+### B. Randomly subsample remaining samples to 300 individuals
+    
+### C. For each grouping: drop years with < 10 sites:
+    
+#### i. State-wide
+      
+#### ii. Ecoregions
+      
+#### iii. Elevation bands
+ 

@@ -20,6 +20,7 @@ library(sp)
 library(maps) #mapping with ggplot2
 library(ggmap) #for mapping w/google map basemaps
 library(scales)
+library(ggpp)
 
 #Setting up ggmap API key: NOTE - for the map figures to work, you'll need to set up a Google Maps Platform Console Account at
 #https://cloud.google.com/maps-platform/, create an API key, and store it in your .Renviron file as "GOOGLEMAPS_API_KEY". 
@@ -186,13 +187,16 @@ Similar to richness - some sites increasing, others decreasing. No obvious/consi
 
 
 **Try making a map color coded by site trend?**
- 
+
 ### B. State-wide trends in richness and density:
 
 First, read in statewide average richness and density data: 
 
 ```{r}
-statewide <- read.csv("cleaned_data/statewide_richness_density.csv")
+statewide <- read.csv("cleaned_data/statewide_richness_density.csv")%>%
+  mutate(sampleDate = ymd(sampleDate), 
+         yr = year(sampleDate))%>%
+  select(!X)
 head(statewide)
 ```
 
@@ -201,7 +205,7 @@ Check distribution of data:
 ```{r}
 #data re-organization:
 hist_dat <- statewide %>%
-  pivot_longer(!c(X, yr, n_samples), names_to = "type", values_to = "value")%>%
+  pivot_longer(!c(sampleId, sampleDate, yr), names_to = "type", values_to = "value")%>%
   mutate(logtrans = log10(value))
 
 ggplot(hist_dat, aes(x = value))+
@@ -216,7 +220,7 @@ ggplot(hist_dat, aes(x = logtrans))+
   labs(x = "log10(value)")
 ```
 
-Both per-site values are skewed, log transform helps a bit. Overall richness is fine without; overall density also skewed. 
+Richness is ok without log transform; density should be log transformed 
 
 #### i. Richness over time: 
 
@@ -225,7 +229,7 @@ Both per-site values are skewed, log transform helps a bit. Overall richness is 
 Basic LM testing for trends in state-wide richness: 
 
 ```{r}
-statewide.richness.lm <- lm(richness~yr, statewide)
+statewide.richness.lm <- lm(richness~sampleDate, statewide)
 summary(statewide.richness.lm)
 ```
 
@@ -234,32 +238,33 @@ Significant increase in richness over time.
 Visualization:
 
 ```{r}
-statewide.richness <- ggplot(statewide, aes(y = richness, x = yr))+
+statewide.richness <- ggplot(statewide, aes(y = richness, x = sampleDate))+
   geom_point(size = 0.5)+
   geom_smooth(se = F, method = "lm", size = 0.5, linetype = "dashed", color = "red")+
   geom_smooth(color = "darkgrey")+
   geom_text_npc(aes(npcx = 0.9, npcy = 0.9, label = paste("P = ", round(summary(statewide.richness.lm)$coefficients[2,4], 2), sep = "")), hjust = 1)+
   geom_text_npc(aes(npcx = 0.9, npcy = 0.85, label = paste("Adj. R2 = ", round(summary(statewide.richness.lm)$adj.r.squared, 2), sep = "")), hjust = 1)+
   theme_classic()+
-  labs(x = "Year", 
+  labs(x = "Date", 
        y = "Richness")
 statewide.richness
 ```
 
 **Per-sample richness:**
 
+*NOT RUN*
 Basic LM testing for trends in state-wide per-site richness: 
 
-```{r}
+
 persample.richness.lm <- lm(log10(richness_perSample)~yr, statewide)
 summary(persite.richness.lm)
-```
+
 
 Marginally significant decrease in per-site richness over time
 
 Visualization:
 
-```{r}
+
 persite.richness <- ggplot(statewide, aes(y = log10(richness_perSample), x = yr))+
   geom_point(size = 0.5)+
   geom_smooth(se = F, method = "lm", size = 0.5, linetype = "dashed", color = "red")+
@@ -270,7 +275,7 @@ persite.richness <- ggplot(statewide, aes(y = log10(richness_perSample), x = yr)
   labs(x = "Year", 
        y = "log10(per-sample richness)")
 persite.richness
-```
+
 
 #### ii. Density over time:
 
@@ -279,7 +284,7 @@ persite.richness
 Basic LM testing for trends in state-wide density: 
 
 ```{r}
-statewide.dens.lm <- lm(log10(dens_xbar)~yr, statewide)
+statewide.dens.lm <- lm(log10(tot_dens)~sampleDate, statewide)
 summary(statewide.dens.lm)
 ```
 
@@ -288,33 +293,33 @@ Significant decline in density over time.
 Visualization:
 
 ```{r}
-statewide.dens <- ggplot(statewide, aes(y = log10(dens_xbar), x = yr))+
+statewide.dens <- ggplot(statewide, aes(y = log10(tot_dens), x = sampleDate))+
   geom_point(size = 0.5)+
   geom_smooth(se = F, method = "lm", size = 0.5, linetype = "dashed", color = "red")+
   geom_smooth(color = "darkgrey")+
   geom_text_npc(aes(npcx = 0.9, npcy = 0.9, label = paste("P = ", round(summary(statewide.dens.lm)$coefficients[2,4], 6), sep = "")), hjust = 1)+
   geom_text_npc(aes(npcx = 0.9, npcy = 0.85, label = paste("Adj. R2 = ", round(summary(statewide.dens.lm)$adj.r.squared, 2), sep = "")), hjust = 1)+
   theme_classic()+
-  labs(x = "Year", 
+  labs(x = "Date", 
        y = "log10(Density)")
 statewide.dens
 ```
 
 
 **Per-sample density:**
-
+*NOT RUN*
 Basic LM testing for trends in state-wide per-sample density: 
 
-```{r}
+
 persite.dens.lm <- lm(log10(dens_perSample)~yr, statewide)
 summary(persite.dens.lm)
-```
+
 
 Significant decrease in per-site density over time
 
 Visualization:
 
-```{r}
+
 persite.dens <- ggplot(statewide, aes(y = log10(dens_perSample), x = yr))+
   geom_point(size = 0.5)+
   geom_smooth(se = F, method = "lm", size = 0.5, linetype = "dashed", color = "red")+
@@ -325,15 +330,15 @@ persite.dens <- ggplot(statewide, aes(y = log10(dens_perSample), x = yr))+
   labs(x = "Year", 
        y = "log10(per-sample density)")
 persite.dens
-```
+
 
 Combine and save:
 
 ```{r}
-statewide.analyses <- (statewide.richness|persite.richness)/(statewide.dens|persite.dens)
+statewide.analyses <- (statewide.richness|statewide.dens)
 statewide.analyses
 
-ggsave("plots/statewide_richness_density.pdf", statewide.analyses, device = "pdf", units = "in", width = 6.5, height =9, dpi = "retina")
+ggsave("plots/statewide_full.pdf", statewide.analyses, device = "pdf", units = "in", width = 9, height =5, dpi = "retina")
 ```
 
 
@@ -1229,8 +1234,11 @@ total_dens <- taxa_densities%>%
             fieldSplit = mean(fieldSplit), 
             tot_dens = sum(taxa_density), # calculate total density in sample
             area = mean(area))%>%
-  mutate(sample_prop = labSplit*fieldSplit) #calculate sample proportion (labSplit*fieldSplit)
+  mutate(sample_prop = labSplit*fieldSplit)%>% #calculate sample proportion (labSplit*fieldSplit)
+  filter(!tot_dens == 0)
+
 ```
+
 
 ### A. Density vs. LabSplit: 
 
@@ -1291,7 +1299,7 @@ dens.sampleprop.log <- ggplot(total_dens, aes(x = sample_prop, y = log10(tot_den
   geom_smooth(size = 0.5, color = "Red", linetype = "dashed", method = "lm")+
   annotate(geom = "label", x = 0.5, y = 0.2, label = "P <0.001; R2 = 0.55")+
   theme_classic()+
-  labs(y = "", x = "Sample Proportion")
+  labs(y = "log10(Total sample density)", x = "Sample Proportion")
 dens.sampleprop.log
 ```
 
@@ -1326,7 +1334,7 @@ dens.area.log <- ggplot(filter(total_dens, area <50), aes(x = area, y = log10(to
   geom_smooth(size = 0.5, color = "Red", linetype = "dashed", method = "lm")+
   annotate(geom = "label", x = 1.75, y = 0.1, label = "P <0.001; R2 = 0.10")+
   theme_classic()+
-  labs(y = "", x = "Sample area, m2")
+  labs(y = "log10(Total sample density)", x = "Sample area, m2")
 dens.area.log
 ```
 
@@ -1372,7 +1380,9 @@ Check distribution of richness, density, and per-site richness and density:
 ```{r}
 #data re-organization:
 hist_eco <- eco_r_d %>%
-  select(ecoName, yr, richness, density_xbar, density_perSample, richness_perSample)%>%
+  select(ecoName, yr, richness, tot_dens
+         #, density_perSample, richness_perSample
+         )%>%
   pivot_longer(!c(ecoName, yr), names_to = "type", values_to = "value")%>%
   mutate(logtrans = log10(value))
 
@@ -1388,8 +1398,7 @@ ggplot(hist_eco, aes(x = logtrans))+
   labs(x = "log10(value)")
 ```
 
-All look better with log transform except for per-sample richness. 
-
+Log transform for density only
 
 ### A. Are there trends in richness over time within each ecoregion?
 
@@ -1406,7 +1415,7 @@ Run a model for each ecoregion separately, return a summary table with model res
 
 ```{r}
 ecoRichness.overall.lm <- eco_nested %>%
-  mutate(model = purrr::map(data, ~lm(log10(richness)~yr, data = .)%>%
+  mutate(model = purrr::map(data, ~lm(richness~yr, data = .)%>%
                        tidy))%>%
   unnest(model)%>%
   filter(term == "yr")
@@ -1420,15 +1429,18 @@ Visualization:
 ```{r}
 library(ggpp)
 
-eco_ro_pvals <- merge(eco_r_d, ecoRichness.overall.lm)
+eco.ro.pv <- ecoRichness.overall.lm%>%
+  select(ecoName, p.value)
 
-eco.overall.richness <- ggplot(eco_ro_pvals, aes(x = yr, y = log10(richness), color = ecoName))+
-  geom_point()+
-  geom_smooth(method = "lm", se = F)+
+eco_ro_pvals <- merge(eco_r_d, eco.ro.pv)
+
+eco.overall.richness <- ggplot(eco_ro_pvals, aes(x = yr, y = richness, color = ecoName))+
+  geom_point(size = 0.5)+
+  geom_smooth(method = "lm", se = F, linetype = "dashed", size = 0.5, color = "black")+
   geom_text_npc(aes(npcx = 0.9, npcy = 0.9, label = paste( "P = ",round(p.value, 2), sep = "")))+
   theme_classic()+
-  facet_wrap(~ecoName, scales = "free_x", nrow = 2, ncol = 4)+
-  labs(x = "Year", y = "log10(Taxonomic richness)", color = "Ecoregion Name")+
+  facet_wrap(~ecoName, scales = "free_y", nrow = 1, ncol = 4)+
+  labs(x = "Year", y = "Taxonomic richness", color = "Ecoregion Name")+
   theme(legend.position = "none", 
         axis.title = element_text(size = 10, face = "bold"), 
         strip.text = element_text(size = 8))
@@ -1441,24 +1453,26 @@ Save:
 ggsave("plots/ecoregion_richness.pdf", eco.overall.richness, device = "pdf", units = "in", width = 8, height = 5, dpi = "retina")
 ```
 
-#### ii. Per-site:
+ii. Per-site:
+
+**NOT RUN**
 
 Run a model for each ecoregion separately, return a summary table with model results for each: 
 
-```{r}
+
 ecoRichness_models <- eco_nested %>%
   mutate(model = purrr::map(data, ~lm(richness_perSample~yr, data = .)%>%
                        tidy))%>%
   unnest(model)%>%
   filter(term == "yr")
 ecoRichness_models
-```
+
 
 Significant increase in richness in Wasatch & Uinta 
 
 Visualization: 
 
-```{r}
+
 eco_r_pvals <- merge(eco_r_d, ecoRichness_models)
 
 eco.richness <- ggplot(eco_r_pvals, aes(x = yr, y = richness_perSample, color = ecoName))+
@@ -1472,13 +1486,14 @@ eco.richness <- ggplot(eco_r_pvals, aes(x = yr, y = richness_perSample, color = 
         axis.title = element_text(size = 10, face = "bold"), 
         strip.text = element_text(size = 8))
 eco.richness
-```
+
 
 Save: 
 
-```{r}
+
 ggsave("plots/ecoregion_PSrichness.pdf", eco.richness, device = "pdf", units = "in", width = 8, height = 5, dpi = "retina")
-```
+
+**NOT RUN**
 
 ### B. Are there trends in density over time within each ecoregion
 
@@ -1488,7 +1503,7 @@ Run a model for each ecoregion separately, return a summary table with model res
 
 ```{r}
 ecoDens.overall.lm <- eco_nested %>%
-  mutate(model = purrr::map(data, ~lm(log10(density_xbar)~yr, data = .)%>%
+  mutate(model = purrr::map(data, ~lm(log10(tot_dens)~yr, data = .)%>%
                        tidy))%>%
   unnest(model)%>%
   filter(term == "yr")
@@ -1500,14 +1515,17 @@ Significant declines in overall density in all three ecoregions
 Visualization: 
 
 ```{r}
-eco_do_pvals <- merge(eco_r_d, ecoDens.overall.lm)
+eco.do.pv <- ecoDens.overall.lm%>%
+  select(ecoName, p.value)
 
-eco.overall.dens <- ggplot(eco_do_pvals, aes(x = yr, y = log10(density_xbar), color = ecoName))+
-  geom_point()+
-  geom_smooth(method = "lm", se = F)+
+eco_do_pvals <- merge(eco_r_d, eco.do.pv)
+
+eco.overall.dens <- ggplot(eco_do_pvals, aes(x = yr, y = log10(tot_dens), color = ecoName))+
+  geom_point(size = 0.5)+
+  geom_smooth(method = "lm", se = F, size = 0.5, linetype = "dashed", color = "black")+
   geom_text_npc(aes(npcx = 0.9, npcy = 0.9, label = paste( "P = ",round(p.value, 2), sep = "")))+
   theme_classic()+
-  facet_wrap(~ecoName, scales = "free_x", nrow = 2, ncol = 4)+
+  facet_wrap(~ecoName, scales = "free_y", nrow = 2, ncol = 4)+
   labs(x = "Year", y = "log10(Mean sample density)", color = "Ecoregion Name")+
   theme(legend.position = "none", 
         axis.title = element_text(size = 10, face = "bold"), 
@@ -1515,24 +1533,25 @@ eco.overall.dens <- ggplot(eco_do_pvals, aes(x = yr, y = log10(density_xbar), co
 eco.overall.dens
 ```
 
-#### ii. Per-site:
+ii. Per-site:
 
+**NOT RUN**
 Run a model for each ecoregion separately, return a summary table with model results for each: 
 
-```{r}
+
 ecoDens_models <- eco_nested %>%
   mutate(model = purrr::map(data, ~lm(log10(density_perSample)~yr, data = .)%>%
                        tidy))%>%
   unnest(model)%>%
   filter(term == "yr")
 ecoDens_models
-```
+
 
 Significant decline in density in CO Plateaus, marginally significant decline in Central Basin & Range
 
 Visualization: 
 
-```{r}
+
 eco_d_pvals <- merge(eco_r_d, ecoDens_models)
 
 eco.dens.persite <- ggplot(eco_d_pvals, aes(x = yr, y = log10(density_perSample), color = ecoName))+
@@ -1546,14 +1565,14 @@ eco.dens.persite <- ggplot(eco_d_pvals, aes(x = yr, y = log10(density_perSample)
         axis.title = element_text(size = 10, face = "bold"), 
         strip.text = element_text(size = 8))
 eco.dens.persite
-```
+
 
 ### C. Combining Plots and saving:
 
 Combine plots: 
 
 ```{r}
-ecoregion.analyses <- (eco.richness|eco.overall.richness)/(eco.dens.persite|eco.overall.dens)
+ecoregion.analyses <- (eco.overall.richness/eco.overall.dens)
 ecoregion.analyses
 ```
 
@@ -1562,6 +1581,7 @@ Save:
 ```{r}
 ggsave("plots/ecoregion_rd_analyses.pdf", ecoregion.analyses, device = "pdf", units = "in", dpi = "retina", width = 12, height = 6.5)
 ```
+
 
 ## V. Elevation band analysis
 
@@ -1587,7 +1607,7 @@ Elevation bands are <1250 m, 1250-1650, 1650-2050, 2050-2450, and >2450 m.
 Create a vector of elevation breaks (NOTE- just change the values in this vector to change elevation band cutoffs)
 
 ```{r}
-breaks <- c(1250, 1650, 2050, 2250) #vector of elevation band breaks
+breaks <- c(1400, 1800, 2200, 2600) #vector of elevation band breaks
 
 break.names <- c(
   paste("<", breaks[1], sep = ""), 
@@ -1627,22 +1647,25 @@ Calculate total richness and mean total sample density for each band * year:
 
 ```{r}
 elev_means <- subsetted_bands %>%
-  group_by(elev_band, band_code, yr)%>%
+  group_by(elev_band, band_code, yr, sampleId, siteId)%>%
   summarise(richness = length(unique(scientificName)), 
-            density_xbar = mean(tot_dens), 
-            n_samples = length(unique(sampleId)), 
-            n_sites = length(unique(siteId)),
-            density_perSample = density_xbar/n_samples, 
-            richness_perSample = richness/n_samples
+            tot_dens = unique(tot_dens), 
+            #n_samples = length(unique(sampleId)), 
+           # n_sites = length(unique(siteId)),
+           # density_perSample = density_xbar/n_samples, 
+           # richness_perSample = richness/n_samples
             )%>%
-  arrange(band_code, yr)
+  arrange(band_code, yr)%>%
+  group_by(elev_band, yr)%>%
+  mutate(n_sites = length(unique(siteId)))%>%
+  ungroup()
 ```
 
 #### ii. Drop band * year combos with < 10 sites
 
 ```{r}
 elev_10plus <- elev_means %>%
-  filter(!n_sites<10)
+  filter(!n_sites<9)
 ```
 
 #### iii. Checking distributions
@@ -1652,7 +1675,9 @@ Check distribution of richness, density, and per-site richness and density:
 ```{r}
 #data re-organization:
 elev_pivot <- elev_10plus %>%
-  pivot_longer(!c(elev_band, band_code, yr, n_samples, n_sites), names_to = "type", values_to = "value")%>%
+  pivot_longer(!c(elev_band, band_code, yr, n_sites, sampleId, siteId
+                  #, n_samples
+                  ), names_to = "type", values_to = "value")%>%
   mutate(logtrans = log10(value))
 
 ggplot(elev_pivot, aes(x = value))+
@@ -1667,7 +1692,7 @@ ggplot(elev_pivot, aes(x = logtrans))+
   labs(x = "log10(value)")
 ```
 
-All look better with log transform except for overall richness. 
+Use log transform for density, not for richness
 
 Add column with log transform for all except overall richness:
 
@@ -1689,7 +1714,7 @@ elev_pivot %>%
   theme(legend.position = "none")
 ```
 
-Only 1 yr in <1250m class
+only 10 years data in >2600 class
 
 ### B. Modeling
 
@@ -1721,9 +1746,9 @@ elev_pv <- merge(elev_pivot, elev.lms)%>% #add p-values
   filter(!n_yrs <4)%>% #drop all bands with <4yrs data
   mutate(name = case_when( 
     type == "richness"~"Richness", 
-    type == "richness_perSample"~"Richness (per-sample)", 
-    type == "density_xbar"~"Mean density", 
-    type == "density_perSample"~"Mean density (per-sample)"#add column with full names for plot labeling
+   # type == "richness_perSample"~"Richness (per-sample)", 
+    type == "tot_dens"~"Total sample density" 
+   # ,type == "density_perSample"~"Mean density (per-sample)"#add column with full names for plot labeling
   ),
          transform_name = ifelse(type == "richness", name, paste("log10(", name, ")", sep = ""))) #adding transform (log10 for everything except Richness)
 
@@ -1748,11 +1773,11 @@ Draw plot:
 ```{r}
 elev.grid <- ggplot(elev_pv, aes(x = yr, y = transform, color = factor(band_code)))+ 
   geom_point(size = 0.5)+
-  geom_smooth(se = F, method = "lm", size = 0.5, linetype = "dashed")+
-  geom_text_npc(aes(npcx = 0.1, npcy = 0.9, label = paste("P = ", round(p.value, 2))), size = 3.25, #add p-values to each plot, rounding to 2 decimal places
+  geom_smooth(se = F, method = "lm", size = 0.5, linetype = "dashed", color = "black")+
+  geom_text_npc(aes(npcx = 0.9, npcy = 0.9, label = paste("P = ", round(p.value, 2))), size = 3.25, #add p-values to each plot, rounding to 2 decimal places
                 fontface = ifelse(elev_pv$p.value<=0.05, "bold", "plain"))+ #change font face to bold if P<0.05
   theme_classic()+
-  facet_grid(cols = vars(band_code), rows = vars(transform_name), scales = "free", #facet grid by elevation band (x) and measurement type (y)
+  facet_grid(cols = vars(band_code), rows = vars(transform_name), scales = "free_y", #facet grid by elevation band (x) and measurement type (y)
              labeller = labeller(.cols = band.labs, .rows = y.labs, #setting x and y facet labels based on named vectors created above
                                  .default = label_wrap_gen(20)), #wrapping facet labels to get rid of overlap
              switch = "y")+ #moving y facet labels to L side of plot
@@ -1771,7 +1796,7 @@ elev.grid
 Save plot: 
 
 ```{r}
-ggsave("plots/elevation_grid_NEW.pdf",elev.grid, device = "pdf", units = "in", dpi = "retina", height = 8, width = 6.5)
+ggsave("plots/elevation_grid_FULL_NEW.pdf",elev.grid, device = "pdf", units = "in", dpi = "retina", height = 8, width = 6.5)
 ```
 
 
@@ -1798,7 +1823,7 @@ First group of interest: EPTO (Ephemeroptera, Plecoptera, Trichoptera, Odonata)
 Make a vector of these order names; initiate a list to hold loop outputs: 
 
 ```{r}
-epto <- c("Ephemeroptera", "Plecoptera", "Trichoptera", "Odonata") #vector of order names
+epto <- c("Ephemeroptera", "Plecoptera", "Trichoptera", "Odonata", "Diptera") #vector of order names
 
 epto_list <- list() #empty list for data storage
 
@@ -1817,18 +1842,19 @@ for(i in 1:length(epto)){
     summarise(tot_dens = sum(taxa_density), 
               tot_abund = sum(splitCount), 
               richness = length(unique(scientificName)))%>% #calculate total density, abundance, and richness for each sample
-    group_by(yr, order)%>% #group by year
-    summarise(dens_xbar = mean(tot_dens), 
-              abund_xbar = mean(tot_abund), 
-              richness_xbar = mean(richness), #calculate mean sample density, abundance, and richness for each year
-              n_samples = length(unique(sampleId)))%>% #calculate number of samples per year
-    pivot_longer(!c(yr, n_samples, order), names_to = "type", values_to = "value")%>% #pivot longer for smoother plotting/analysis
-    mutate(transform = log10(value), #adding log10 transformed column
+   # group_by(yr, order)%>% #group by year
+   # summarise(dens_xbar = mean(tot_dens), 
+     #         abund_xbar = mean(tot_abund), 
+      #        richness_xbar = mean(richness), #calculate mean sample density, abundance, and richness for each year
+      #        n_samples = length(unique(sampleId)))%>% #calculate number of samples per year
+    pivot_longer(!c(sampleId, yr, order), names_to = "type", values_to = "value")%>% #pivot longer for smoother plotting/analysis
+    mutate(transform = ifelse(type == "richness", value, log10(value)), #adding log10 transformed column
            label = case_when(
-             type == "dens_xbar"~"Mean sample density", 
-             type == "abund_xbar"~"Mean sample abundance", 
-             type == "richness_xbar" ~"Mean sample richness" #adding new column with labels to be used for facet labels in plots
-           ))
+             type == "tot_dens"~"log10(Total sample density)", 
+             type == "tot_abund"~"log10(Total sample abundance)", 
+             type == "richness" ~ "Sample richness" #adding new column with labels to be used for facet labels in plots
+           ))%>%
+    filter(!value == 0)
   
   base.plots[[i]] <- ggplot(temp, aes(x = value))+
     geom_density(fill = "grey", color = "black")+
@@ -1844,7 +1870,7 @@ for(i in 1:length(epto)){
     nest(data = -c(type)) #nest data by type
   
   temp.lm <- temp_nest %>%
-  mutate(model = purrr::map(data, ~lm(value~yr, data = .)%>%
+  mutate(model = purrr::map(data, ~lm(transform~yr, data = .)%>%
                        tidy))%>%
   unnest(model)%>%
   filter(term == "yr") #run a model for each type; save results in temp.lm
@@ -1852,15 +1878,17 @@ for(i in 1:length(epto)){
   temp_pv <- merge(temp, temp.lm)%>% #add p-values (and other model info) to the temp dataset
     arrange(type, yr)
   
+  
+  
   epto_list[[i]] <- temp_pv #save output as "ith" item in epto_list
   
-  summary.plots[[i]]<-ggplot(epto_list[[i]], aes(x = yr, y = value))+ #create summary plot of abundance, density, and richness vs. year
+  summary.plots[[i]]<-ggplot(epto_list[[i]], aes(x = yr, y = transform))+ #create summary plot of abundance, density, and richness vs. year
   geom_point(size = 0.5)+
   geom_smooth(size = 0.5, color = "darkgrey")+
   geom_smooth(se = F, method = "lm", size = 0.5, color = "red", linetype = "dashed")+ #add points, smoothed line, and line of best fit
   theme_classic()+
   geom_text_npc(aes(npcx = 0.9, npcy = 0.95, label = paste(" P =", round(p.value, 2), sep = "")))+ #add corresponding p-value to plot
-  labs(x = "", y = "Value", title = unique(epto_list[[i]]$order))+ #axis labels + plot title
+  labs(x = "Year", y = "Value", title = unique(epto_list[[i]]$order))+ #axis labels + plot title
   facet_wrap(~label, scales = "free")+
   theme(plot.title = element_text(face = "bold", size = "12", hjust = 0.5), 
         strip.text = element_text(face = "bold", size = 11), 
@@ -1873,9 +1901,10 @@ for(i in 1:length(epto)){
 }
 ```
 
+
 #### ii. Visualizations: 
 
-```{r}
+```{r, message = F, warning = F}
 epto.stack <- summary.plots[[1]]/summary.plots[[2]]/summary.plots[[3]]/summary.plots[[4]]
 epto.stack
 
@@ -1886,6 +1915,362 @@ Save:
 ```{r}
 ggsave("plots/epto_analyses.pdf", epto.stack, device = "pdf", units = "in", height = 11, width = 8.5, dpi = "retina")
 ```
+
+### B. Chironomidae
+
+**NOTE** because most Chironomidae aren't classified to the genus-level, this dataset has all levels of taxonomic classification within that family. Aside from that, the data cleaning steps are the same.  
+
+Read in data: 
+
+```{r}
+chiro <- read.csv("cleaned_data/chironomidae.csv")
+```
+
+Calculate total density and abundance for each sample:
+
+```{r}
+chiro_groups <- chiro%>%
+  group_by(sampleId, sampleDate, yr)%>% #group by sample ID and year; retain sampleDate column
+  summarise(tot_dens=sum(density), #calculate total sample density
+            tot_abund = sum(splitCount)) #calculate total sample abundance
+```
+
+Check distribution: 
+
+```{r}
+# Data prep:
+chiro_pivot <- chiro_groups%>%
+  pivot_longer(!c(sampleId, sampleDate, yr), names_to = "type", values_to = "value")%>%
+  mutate(transform = log10(value))%>%
+  filter(!value == 0)
+
+#Plotting: 
+
+#without transform:
+ggplot(chiro_pivot, aes(x = value))+
+  geom_density(fill = "grey", color = "black")+
+  theme_classic()+
+  facet_wrap(~type, scales = "free")
+
+#with transform:
+ggplot(chiro_pivot, aes(x = transform))+
+  geom_density(fill = "grey", color = "black")+
+  theme_classic()+
+  facet_wrap(~type, scales = "free")
+```
+
+Both strongly left-skewed; use log transform
+
+Nest data; run LM's: 
+
+```{r}
+chiro_nest <- chiro_pivot %>%
+  nest(data = -type)
+
+chiro.lm <- chiro_nest %>%
+  mutate(model = purrr::map(data, ~lm(transform~yr, data = .)%>%
+                       tidy))%>%
+  unnest(model)%>%
+  filter(term == "yr")
+
+chiro.lm
+```
+
+Add P-values: 
+
+```{r}
+chiro.pv <- chiro.lm %>%
+  select(type, p.value)
+
+chiro_pv <- merge(chiro_pivot, chiro.lm)%>%
+  mutate(full_label = ifelse(type == "tot_dens", "Total Sample Density", "Total Sample Abundance"))
+```
+
+Plot: 
+
+```{r}
+chiro.plot<-ggplot(chiro_pv, aes(x = yr, y = transform))+ #create summary plot of abundance & density vs. year
+  geom_point(size = 0.5)+
+  geom_smooth(size = 0.5, color = "darkgrey")+
+  geom_smooth(se = F, method = "lm", size = 0.5, color = "red", linetype = "dashed")+ #add points, smoothed line, and line of best fit
+  theme_classic()+
+  geom_text_npc(aes(npcx = 0.9, npcy = 0.95, label = paste(" P =", round(p.value, 2), sep = "")))+ #add corresponding p-value to plot
+  labs(x = "Year", y = "Value", title = "Chironomidae")+ #axis labels + plot title
+  facet_wrap(~full_label, scales = "free")+
+  theme(plot.title = element_text(face = "bold", size = "12", hjust = 0.5), 
+        strip.text = element_text(face = "bold", size = 11), 
+        axis.title.y = element_text(face = "bold", size = 11), 
+        axis.title.x = element_text(face = "bold", size = 11), 
+        axis.text = element_text(size = 10)) #formatting title, strip, and axis text
+chiro.plot
+```
+
+Save plot:
+
+```{r}
+ggsave("plots/chironomidae.pdf", chiro.plot, device = "pdf", units = "in", dpi = "retina", width = 6.5, height = 4)
+```
+
+## VII. Insects vs. Non-insects
+
+**Questions:** What are the trends in richness and density for insects and non-insects 
+
+  * At the state-level
+  * At the ecoregion-level
+  
+Analysis should be carried out with same filters as others: Subsampled to 300 individuals; drop years with < 9 sites.  
+
+For richness calculations, use subsampled dataset that has A) samples with <300 individuals removed and B) remaining samples randomly subsampled to 300 individuals.
+
+### A. Data Prep
+
+First, add a column with either "insect" or "non-insect" to the overall taxa density dataset dataset: 
+
+```{r}
+insect_densities <- taxa_densities %>%
+  mutate(category = ifelse(phylum == "Arthropoda" & class == "Insecta", "Insects", "Non-insects"))
+```
+
+
+Calculate total density for insects and non insects for each sample: 
+
+```{r}
+insect_samples <- insect_densities %>%
+  group_by(sampleId, category, yr)%>%
+  mutate(tot_dens = sum(taxa_density))%>%
+  ungroup()
+
+insect_wide <- insect_samples%>%
+  pivot_wider(id_cols = c(1:38), names_from = "category", values_from = "tot_dens")%>%
+  rename(non_insects = 40)
+```
+
+#### i. Drop all samples with fewer than 300 individuals: 
+
+```{r}
+insect_300 <- insect_wide%>%
+  group_by(sampleId)%>%
+  mutate(n_indiv = sum(splitCount))%>%
+  ungroup()%>%
+  filter(!n_indiv < 300)
+```
+
+#### ii. Randomly subsample the remaining samples to 300 individuals: 
+
+First, make new dataframe with a row for each individual in each sample (i.e. for sample A with 6 observations of organism B, want 6 rows with "organism B"): 
+
+```{r}
+insect.sampleId.reps <- rep(insect_300$sampleId, insect_300$splitCount) #repeat sample ID for # in splitCount col
+insect.taxaName.reps <- rep(insect_300$scientificName, insect_300$splitCount) #repeat taxa name for # in splitCount col
+insect_taxa_counts <- data.frame(insect.sampleId.reps, insect.taxaName.reps) #create new dataframe with these objects
+```
+
+Randomly select 300 observations from within each sample ID: 
+
+```{r}
+set.seed(123) #for reproducibility
+
+insect_subsets <- insect_taxa_counts %>%
+  group_by(insect.sampleId.reps)%>% #group by sample ID
+  slice_sample(n = 300)%>% #select 300 random rows from within that sample. 
+  arrange(insect.sampleId.reps, insect.taxaName.reps)
+
+nrow(insect_subsets)/length(unique(insect_subsets$insect.sampleId.reps)) #double checking that correct no. rows were selected
+```
+
+Distill this dataframe back to 1 row for each sample + taxa combo, column for splitCount for that taxa
+
+```{r}
+insect_subsets_short <- insect_subsets %>%
+  group_by_all()%>% #group by all columns
+  count()%>% #count # duplicate columns and add to new col
+  rename(splitCount = n, sampleId = insect.sampleId.reps, scientificName = insect.taxaName.reps)  #updating column names for merge
+```
+
+Add sample metadata back in: 
+
+```{r}
+insect_meta <- insect_300%>%
+  select(2:5, 22:40, -taxa_density)%>% #select metadata columns from ecoregion density DF (including total sample density calculated before sub-sampling)
+  group_by(siteId)%>%
+  mutate(Insects = mean(Insects, na.rm = T), 
+         non_insects = mean(non_insects, na.rm = T))%>%
+  distinct() #remove duplicate rows
+
+subsets_meta <- merge(insect_subsets_short, insect_meta)%>% #merge with subsetted taxonomic data
+  mutate(yr = year(sampleDate))#add year column
+```  
+
+Add taxonomic data back in: 
+
+```{r}
+#Extract taxonomic data
+insect_taxa <- insect_300%>%
+  select(scientificName, taxonomyId, phylum, class, order, family, subFamily, genus, species)%>%
+  distinct()
+
+#Add to subsetted dataset: 
+insect_subset_final <- merge(subsets_meta, insect_taxa)%>%
+  mutate(category = ifelse(phylum == "Arthropoda"&class == "Insecta", "Insects", "Non-insects"))
+```
+
+#### iii. Calculate insect and non-insect richness for each sample: 
+
+```{r}
+insect_means <- insect_subset_final%>%
+  mutate(tot_dens = ifelse(category == "Insects", Insects, non_insects))%>% #converting densities back into single column
+  group_by(sampleId, siteId, category, yr)%>% #group by sample ID/category/year
+  summarise(tot_dens = unique(tot_dens), #extract unique density values
+            richness = length(unique(scientificName))) #count no. unique taxa in each category
+```
+
+#### iv. Drop years with < 9 different sites: 
+
+First, visualization of # sites per year with data in each category:
+
+```{r}
+insect_means %>%
+  group_by(category, yr)%>%
+  summarise(n_sites = length(unique(siteId)))%>%
+  ggplot(aes(x = yr, y = n_sites))+
+  geom_bar(stat = "identity", fill = "grey", color = "black")+
+  geom_text(aes(label = n_sites), size = 3, vjust = 0)+
+  theme_classic()+
+  geom_hline(aes(yintercept = 9), size = 0.5, linetype = "dashed", color = "red")+
+  facet_wrap(~category, scales = "free", nrow = 2, ncol = 1)
+```
+
+Drop sites with < 9 years data: 
+
+```{r}
+insect_9plus <- insect_means%>%
+  group_by(yr)%>%
+  mutate(n_sites = length(unique(siteId)))%>%
+  ungroup()%>%
+  filter(!n_sites<9)
+```
+
+
+### B. Modeling and Figures
+
+First, check distribution of the data: 
+
+**Richness**
+
+```{r}
+#Richness
+ggplot(insect_9plus, aes(x = richness))+
+  geom_density(fill = "grey", color = "black")+
+  facet_wrap(~category, scales = "free")+
+  theme_classic()
+```
+
+**Density**
+
+```{r}
+#Density
+ggplot(insect_9plus, aes(x = log10(tot_dens)))+
+  geom_density(fill = "grey", color = "black")+
+  facet_wrap(~category, scales = "free")+
+  theme_classic()
+```
+
+Use log transform for density, insect richness fine without, non-insect richness likely not useable. 
+
+#### i. Trends in Richness over time: 
+
+Nest data by category: 
+
+```{r}
+insect_nest<-insect_9plus%>%
+  nest(data = -category)
+```
+
+Run LM's for each category:
+
+```{r}
+ins.richness.lms <- insect_nest%>%
+  mutate(model = purrr::map(data, ~lm(richness~yr, data = .)%>%
+                       tidy))%>%
+  unnest(model)%>%
+  filter(term == "yr")
+ins.richness.lms
+```
+
+Add p-values and plot:
+
+```{r}
+insect_richness_pv <- merge(insect_9plus, ins.richness.lms[,c(1,7)])
+
+insect.richness <- ggplot(insect_richness_pv, aes(x = yr, y = richness))+
+  geom_point(size = 0.5)+
+  geom_smooth(size = 0.5, color = "darkgrey")+
+  geom_smooth(se = F, method = "lm", size = 0.5, color = "red", linetype = "dashed")+ #add points, smoothed line, and line of best fit
+  theme_classic()+
+  geom_text_npc(aes(npcx = 0.9, npcy = 0.95, label = paste(" P =", round(p.value, 2), sep = "")))+ #add corresponding p-value to plot
+  labs(x = "Year", y = "Richness")+ #axis labels 
+  facet_wrap(~category, scales = "free_y")+
+  theme( 
+        strip.text = element_text(face = "bold", size = 11), 
+        axis.title.y = element_text(face = "bold", size = 11), 
+        axis.title.x = element_blank(), 
+        axis.text = element_text(size = 10)) #formatting title, strip, and axis text
+insect.richness
+```
+
+No change in insect richness over time, significant increase in non-insect richness over time. 
+
+#### ii. Trends in density over time
+
+Run LM's for each category:
+
+```{r}
+ins.dens.lms <- insect_nest%>%
+  mutate(model = purrr::map(data, ~lm(log10(tot_dens)~yr, data = .)%>%
+                       tidy))%>%
+  unnest(model)%>%
+  filter(term == "yr")
+ins.dens.lms
+```
+
+Add p-values and plot:
+
+```{r}
+insect_dens_pv <- merge(insect_9plus, ins.dens.lms[,c(1,7)])
+
+insect.dens <- ggplot(insect_dens_pv, aes(x = yr, y = log10(tot_dens)))+
+  geom_point(size = 0.5)+
+  geom_smooth(size = 0.5, color = "darkgrey")+
+  geom_smooth(se = F, method = "lm", size = 0.5, color = "red", linetype = "dashed")+ #add points, smoothed line, and line of best fit
+  theme_classic()+
+  geom_text_npc(aes(npcx = 0.9, npcy = 0.95, label = paste(" P =", round(p.value, 2), sep = "")))+ #add corresponding p-value to plot
+  labs(x = "Year", y = "log10(Total sample density)")+ #axis labels + plot title
+  facet_wrap(~category, scales = "free_y")+
+  theme( 
+        strip.text = element_text(face = "bold", size = 11), 
+        axis.title.y = element_text(face = "bold", size = 11), 
+        axis.title.x = element_text(face = "bold", size = 11), 
+        axis.text = element_text(size = 10)) #formatting title, strip, and axis text
+insect.dens
+```
+
+Significant decline in insect density, no significant changes in non-insects
+
+#### iii. Combine plots and save:
+
+Stack plots: 
+
+```{r}
+insect.comb <- insect.richness/insect.dens
+insect.comb
+```
+
+Save: 
+
+```{r}
+ggsave("plots/insect_noninsect.pdf", insect.comb, device = "pdf", dpi = "retina", units = "in", height = 5, width = 9.5)
+```
+
 
 
 

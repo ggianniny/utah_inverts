@@ -36,7 +36,7 @@ This script cleans and organizes aquatic invertebrate data obtained from the Nat
   
     - organismId (unique to each organism), sampleId, taxonomyId (unique to each taxa), levelId (unique to each classification level), levelName (finest level of classification), lifeStageId (unique to each lifestage), lifeStage, lifeStageAbbreviation, splitCount, labSplit, fieldSplit
     
-Initial data cleaning objectives are to: 
+Data cleaning operations carried out in this script are: 
 
 1. Get rid of unneccesary columns in each dataset, then combine the two datasets (merge by sampleID)
   
@@ -64,19 +64,6 @@ Initial data cleaning objectives are to:
   
     B. By COMID
 
-Data cleaning steps from Rumschlag et al: 
-
-  * Only use wadeable stream data
-  
-  * Control for different sampling methods: only use those that have been shown to produce similar results
-  
-  * Only use area-limited samples
-  
-  * Only include genera that were identified by both agencies (USGS and EPA)
-  
-  * Address changes in taxonomy: update old taxa names to the new taxonomy; create complexes of genera when unclear if updated or not. 
-  * Address ambiguous naming and samples not ID'd to the genus level: Drop any obs. not ID'd to genus level; use genus level for samples with multiple species names (e.g. species1/species2), normalize any combined genus names - e.g., for "genus1/genus2", change all observations of "genus1" or "genus2" to "genus1/genus2". 
-      
 ---
 ---
 
@@ -97,7 +84,9 @@ metadata <- read.csv("raw_data/Utah_Sample_Data_Final_comids.csv")%>% #read in d
            "N", "Y"), #flag all rows with dates greater than today
          sampleDate = as.character(sampleDate), #convert back to character to substring
          sampleDate= ifelse(flag == "N", str_replace(sampleDate, "20", "19"), sampleDate), #substring: correct century (replace "20" with "19") for all flagged rows 
-         sampleDate = ymd(sampleDate)) #convert back to date format. 
+         sampleDate = ymd(sampleDate), #convert back to date format. 
+         yr = year(sampleDate), #add year column
+         sampleProp = labSplit*fieldSplit) #calculate sample proportion
            
 
 taxa <- read.csv("raw_data/Utah_Taxa_Data_Final.csv")%>% #read in datafile
@@ -142,35 +131,35 @@ write.csv(taxa_meta, "raw_data/ut_metadata_taxa_combined.csv")
 
 ### 2. Accounting for differences/checking accuracy in lab split, sampling methods, area, etc. 
 
-#### A. Lab Split - what's the range? Do we need a cutoff? 
+#### A. Sample Proportion (Lab*Field split) - what's the range? Do we need a cutoff? 
 
-First pass, basic summary of lab split range: 
+First pass, display a basic summary of sample proportion: 
 
 ```{r}
-summary(taxa_meta$labSplit)
+summary(metadata$sampleProp)
 ```
   
-Looks like there are a fair number of low lab splits, including some zeros - plotting: 
+Looks like there are a fair number of low sample proportions, including some zeros - plotting: 
 
 ```{r}
-labsplit.hist <- ggplot(metadata, aes(x = labSplit))+ #x axis = labSplit
+sampleprop.hist <- ggplot(metadata, aes(x = sampleProp))+ #x axis = labSplit
   geom_histogram(color = "Black", fill = "Grey", bins = 70)+ 
   theme_classic()+
   geom_vline(xintercept = 0.055, linetype = "dashed", color = "Red")+ #add vertical line at 0.055 (cutoff used in Rumschlag et al.)
-  labs(x = "Lab Split", y = "Count")
-labsplit.hist
+  labs(x = "Sample Proportion", y = "Count")
+sampleprop.hist
 ```
 
-`r round((nrow(filter(metadata, labSplit < 0.055))/nrow(metadata))*100, 2)` percent of samples (n = `r nrow(filter(metadata, labSplit < 0.055))`) are below the 0.055 cutoff from Rumschlag et al (dashed red line). 
+`r round((nrow(filter(metadata, sampleProp < 0.055))/nrow(metadata))*100, 2)` percent of samples (n = `r nrow(filter(metadata, sampleProp < 0.055))`) are below the 0.055 cutoff from Rumschlag et al (dashed red line). 
 
 
-##### i. How many individuals are in the samples with lab split == 1? 
+##### i. How many individuals are in the samples with sample proportion == 1? 
 
-First, extract samples with labsplit == 1 and calculate total sample abundance:
+First, extract samples with sample proportion == 1 and calculate total sample abundance:
 
 ```{r}
 ls1 <- taxa_meta %>%
-  filter(labSplit == 1)%>% #extract rows w/ labsplit = 1
+  filter(sampleProp == 1)%>% #extract rows w/ sample proportion = 1
   group_by(sampleId)%>% #group by sample ID
   summarise(sample_abund = sum(splitCount)) #calculate total abundance for each sample
 ```
@@ -208,20 +197,20 @@ Save:
 ggsave("plots/ls1_hist.pdf", ls1.hist, device = "pdf", units = "in", height = 5, width = 6.5, dpi = "retina")
 ```
 
-##### ii. Applying lab split cutoff:
+##### ii. Applying sample proportion cutoff:
 
-What are the tradeoffs between # samples and labsplit cutoff? 
+What are the tradeoffs between # samples and sample proportion cutoff? 
 
 Plot showing total # samples on Y, lab split on X. 
 
 ```{r}
 n<- nrow(metadata)
 
-ggplot(metadata, aes(x = labSplit))+
+ggplot(metadata, aes(x = sampleProp))+
   stat_ecdf(aes(y = (1-after_stat(y))), geom = "line", size = 1, color = "red")+
-  scale_y_continuous("Proportion of samples w/ Lab Split > x", position = "left", sec.axis = sec_axis(name = "# Samples w/ Lab Split > x", trans = ~.x*n))+
+  scale_y_continuous("Proportion of samples w/ Sample Proportion > x", position = "left", sec.axis = sec_axis(name = "# Samples w/ Sample Proportion > x", trans = ~.x*n))+
   theme_linedraw()+
-  labs(x ="Lab Split")+
+  labs(x ="Sample Proportion")+
   geom_vline(xintercept = 0.055, linetype = "dashed")
   
 ```
@@ -229,18 +218,18 @@ ggplot(metadata, aes(x = labSplit))+
 For now - using the same cutoff as Rumschlag et al: 
 
 ```{r}
-taxa_meta_labsplit <- taxa_meta %>%
-  filter(!labSplit < 0.055) #remove all observations with labSplit < 0.055
+taxa_meta_sampleprop <- taxa_meta %>%
+  filter(!sampleProp < 0.055) #remove all observations with sampleProp < 0.055
 ```
 
-Using this cutoff means we lose `r round(((nrow(taxa_meta)-nrow(taxa_meta_labsplit))/nrow(taxa_meta))*100, 2)` percent of observations (`r nrow(taxa_meta)-nrow(taxa_meta_labsplit)` individual observations). 
+Using this cutoff means we lose `r round(((nrow(taxa_meta)-nrow(taxa_meta_sampleprop))/nrow(taxa_meta))*100, 2)` percent of observations (`r nrow(taxa_meta)-nrow(taxa_meta_sampleprop)` individual observations). 
 
 #### B. Sampling Method, Habitat type, life stage, and mesh size: 
 
 First, how much variation is there in agency, sampling method, habitat type, etc? 
 
 ```{r}
-categoricals <- taxa_meta_labsplit %>% 
+categoricals <- taxa_meta_sampleprop %>% 
   select_if(is.factor)%>% #extract all factor variables
   summarise_all(n_distinct)%>% #count # distinct levels in each factor
   mutate(n = row_number())%>% #extra col for pivot
@@ -283,7 +272,7 @@ Will also probably want to standardize which lifestages we use (ie include adult
 ##### i. Life Stage: Drop exuvia, eggs, and unspecified
 
 ```{r}
-ggplot(taxa_meta_labsplit, aes(x = lifeStage, fill = lifeStage))+
+ggplot(taxa_meta_sampleprop, aes(x = lifeStage, fill = lifeStage))+
   geom_bar(stat = "count", color = "Black")+
   theme_classic()+
   labs(x = "Life Stage", y = "No. of Observations")+
@@ -297,7 +286,7 @@ Drop eggs & exuvia; assuming that unspecified samples are adults if non-insects,
 First, make a list of the insect orders for which we want to drop observations of adults:
 
 ```{r}
-insect_orders <- taxa_meta_labsplit%>%
+insect_orders <- taxa_meta_sampleprop%>%
   select(class, order)%>% #select class and order columns
   filter(class == "Insecta")%>% #filter all orders in class Insecta
   distinct()%>% #remove duplicates
@@ -309,7 +298,7 @@ to.drop <- insect_orders$order #create vector of order names to drop
 Next, drop all eggs, exuvia, and adult insects in the to.drop list of orders:
 
 ```{r}
-taxa_meta_stage <- taxa_meta_labsplit%>%
+taxa_meta_stage <- taxa_meta_sampleprop%>%
   filter(!lifeStage == "Egg", #drop all eggs
          !lifeStage == "Exuvia")%>% #drop all exuvia
   filter(!(lifeStage == "Adult"&order%in%to.drop)) #drop all adults from the orders in the to.drop list
@@ -351,9 +340,28 @@ ggplot(taxa_meta_stage, aes(x = factor(mesh), fill = factor(mesh)))+
 
 Quite a bit of variation, also lots of NAs. 
 
-#### C. Classification Level - Keep all for now: 
 
-**How much data is classified to genus?**
+#### C. Classification Level - Drop everything not classified to Genus: 
+
+###### Aside: Extract Chironomidae data before filtering by classification level
+
+Extract all data in family Chironomidae; Also apply sample date (>1990) and area (>0.05 & <5) filters from below:
+
+```{r}
+chiro <- taxa_meta_stage%>%
+  filter(family=="Chironomidae")%>% #Extract all rows with family = Chironomidae
+  filter(!area<0.05, !area>5)%>% #Drop samples with very large and very small areas
+  filter(!year(sampleDate)<1990)%>% #Drop samples pre-1990
+  mutate(density = (splitCount*sampleProp)/area)
+```
+
+Save:
+
+```{r}
+write.csv(chiro, "cleaned_data/chironomidae.csv")
+```
+
+##### i. How much data is classified to genus?
 
 First - check which codes correspond with which lifestage
 
@@ -380,6 +388,68 @@ Dashed red line = Genus - all samples with smaller taxonomic ID's are classified
 
 If we just used observations classified to genus or lower, we would lose `r round((nrow(filter(taxa_meta_labsplit, levelId < 23)) / nrow(taxa_meta_labsplit))*100, 2)` percent of the data, leaving  `r nrow(filter(taxa_meta_labsplit, levelId >= 23))` observations remaining. 
 
+##### ii. Dropping all individuals not ID'd to at least genus
+
+```{r}
+taxa_meta_genus <- taxa_meta_stage %>%
+  filter(!levelId<23) #dropping all rows with level ID <23 (23 and up = genus or finer)
+```
+
+What effect does this have on the data? 
+
+```{r}
+#No samples with >300 individuals after dropping:
+nrow(taxa_meta_genus %>%
+  group_by(sampleId)%>%
+  summarise(n_indiv = sum(splitCount))%>%
+  filter(n_indiv>=300))
+
+#No samples with >300 before dropping
+nrow(taxa_meta_stage %>%
+  group_by(sampleId)%>%
+  summarise(n_indiv = sum(splitCount))%>%
+  filter(n_indiv>=300))
+
+#% retained
+(nrow(taxa_meta_genus %>%
+  group_by(sampleId)%>%
+  summarise(n_indiv = sum(splitCount))%>%
+  filter(n_indiv>=300))/nrow(taxa_meta_stage %>%
+  group_by(sampleId)%>%
+  summarise(n_indiv = sum(splitCount))%>%
+  filter(n_indiv>=300))
+)*100
+```
+
+Loose ~39% of the data when dropping individuals not ID'd to genus and samples with <300 individuals. 
+
+
+```{r}
+#After dropping above genus
+taxa_meta_genus %>%
+  group_by(sampleId)%>%
+  summarise(n_indiv = sum(splitCount))%>%
+  ggplot(aes(x = n_indiv))+
+  geom_histogram(fill = "grey", color = "black", bins = 70)+
+  labs(title = "After dropping samples not ID'd to genus", x = "# Individuals in sample", y = "# of samples")+
+  theme_classic()+
+  geom_vline(xintercept = 300, size = 0.5, linetype = "dashed", color = "red")+
+  geom_label(aes(x = 350, y = 600, label = "2901 samples \n with >300 indiv."), fill = "red", fontface = "bold", hjust = 0)
+
+#before dropping above genus
+taxa_meta_stage %>%
+  group_by(sampleId)%>%
+  summarise(n_indiv = sum(splitCount))%>%
+  ggplot(aes(x = n_indiv))+
+  geom_histogram(fill = "grey", color = "black", bins = 70)+
+  labs(title = "Before dropping samples not ID'd to genus", x = "# Individuals in sample", y = "# of samples")+
+  theme_classic()+
+  geom_vline(xintercept = 300, size = 0.5, linetype = "dashed", color = "red")+
+    geom_label(aes(x = 350, y = 800, label = "4716 samples \n with >300 indiv."), fill = "red", fontface = "bold", hjust = 0)
+
+```
+
+
 #### D. Checking area ranges and applying area filters:
 
 First pass - basic summary of sample area: 
@@ -405,7 +475,9 @@ Six samples have area = 100 - visualization without those six samples:
 ggplot(filter(metadata, area <50), aes(x = area))+
   geom_histogram(color = "Black", fill = "Grey", bins = 70)+ 
   theme_classic()+
-  labs(x = "Sample Area, m2", y = "Count")
+  labs(x = "Sample Area, m2", y = "Count")+
+  geom_vline(aes(xintercept = 0.05), color = "red", size = 0.5, linetype = "dashed")+
+  geom_vline(aes(xintercept = 5), color = "red", size = 0.5, linetype = "dashed")
 ```
 
 Much more believable. 
@@ -413,7 +485,7 @@ Much more believable.
 **Final Filter for now:** Removing samples with no area,  with area< 0.05m & >5m from the dataset (same cutoffs used by Rumschlag et al: 
 
 ```{r}
-taxa_meta_area <- taxa_meta_stage%>%
+taxa_meta_area <- taxa_meta_genus%>%
   filter(!is.na(area), 
          !area <0.05, 
          !area >5)
@@ -1036,10 +1108,21 @@ subsets_eco <- merge(subsets_short, eco_meta)%>% #merge with subsetted taxonomic
   mutate(yr = year(sampleDate)) #add year column
 ```
 
+Add taxonomic information back in:
+
+```{r}
+taxa_info <- density_eco_300 %>%
+  select(taxonomyId, scientificName, phylum, class, order, family, subFamily, genus, species)%>%
+  distinct()
+
+subsets_eco1 <- merge(subsets_eco, taxa_info, all.y = F)
+```
+
+
 Save this file for future analyses:
 
 ```{r}
-write.csv(subsets_eco, "cleaned_data/subsetted_full.csv")
+write.csv(subsets_eco1, "cleaned_data/subsetted_full.csv")
 ```
 
 ##### ii. Drop years with only a few sites: 
@@ -1049,13 +1132,13 @@ write.csv(subsets_eco, "cleaned_data/subsetted_full.csv")
 Change cutoff value here:
 
 ```{r}
-site.cutoff <- 10
+site.cutoff <- 9
 ```
 
 First, check how many ecoregion * year combos have fewer sites than the cutoff: 
 
 ```{r}
-sites_perYr <- subsets_eco %>%
+sites_perYr <- subsets_eco1 %>%
   group_by(ecoName, yr)%>% #group by ecoregion and year
   summarise(n_sites = length(unique(siteId)))%>% #count n sites in each ecoregion in each year
   filter(n_sites < site.cutoff)%>% #filter out rows w fewer sites than threshold specified above
@@ -1067,7 +1150,7 @@ sites_perYr <- subsets_eco %>%
 Drop ecoregion * yr combos below the cutoff: 
 
 ```{r}
-subsets_eco1 <- subsets_eco %>%
+subsets_eco2 <- subsets_eco1 %>%
   mutate(eco_yr = paste(ecoName, yr, sep = " "))%>% #add ecoregion+year column 
   filter(!eco_yr%in%sites_perYr$to_drop)%>%#drop ecoregion+year combos in sites_perYr
   select(!eco_yr) #remove extra ecoregion+year column 
@@ -1081,7 +1164,7 @@ unique(subsets_eco1$ecoName)
 Extract data for three primary UT Ecoregions: 
 
 ```{r}
-subsets_eco2 <- subsets_eco1 %>%
+subsets_eco3 <- subsets_eco2 %>%
   filter(ecoCode == 19|ecoCode == 20|ecoCode == 13) #Extract rows with eco codes corresponding to 3 primary UT ecoregions
 ```
 
@@ -1089,20 +1172,15 @@ subsets_eco2 <- subsets_eco1 %>%
 
 Check for outlier years in density/richness by plotting richness/density for each site over time, faceted by ecoregion. 
 
-First, need to calculate richness and total density for each sample: 
+Calculate richness and total density for each sample: 
 
 ```{r}
-ecoSite_means <- subsets_eco2 %>%
+ecoSite_means <- subsets_eco3 %>%
   group_by(sampleId)%>% #group by sample ID
   mutate(tot_dens = unique(tot_dens), 
          richness = length(unique(scientificName)))%>% #calculate total density and richness for each sample
-  ungroup()%>% #ungroup to retain all columns
-  group_by(siteId, yr)%>% #group by siteId and year
-  summarise(
-    dens_xbar = mean(tot_dens), 
-    richness_xbar = mean(richness), #calculate mean density and richness for each site*year
-    ecoName = unique(ecoName) #retain ecoregion name
-  )
+  ungroup()
+  
 ```
 
 
@@ -1111,7 +1189,7 @@ On to plotting:
 **Density:**
 
 ```{r}
-dens.eco.site <- ggplot(ecoSite_means, aes(x = yr, y = log10(dens_xbar), group = factor(siteId), color = ecoName))+
+dens.eco.site <- ggplot(ecoSite_means, aes(x = yr, y = log10(tot_dens), group = factor(siteId), color = ecoName))+
   geom_point()+
   geom_line()+
   facet_wrap(~ecoName)+
@@ -1124,7 +1202,7 @@ dens.eco.site
 **Richness:**
 
 ```{r}
-rich.eco.site <- ggplot(ecoSite_means, aes(x = yr, y = log10(richness_xbar), group = factor(siteId), color = ecoName))+
+rich.eco.site <- ggplot(ecoSite_means, aes(x = yr, y = log10(richness), group = factor(siteId), color = ecoName))+
   geom_point()+
   geom_line()+
   facet_wrap(~ecoName)+
@@ -1148,7 +1226,7 @@ ggsave("plots/ecoSite_richness_density.jpg", eco.site.comb, device = "jpeg", uni
 
 Count # unique species and calculate avg. total sample density in each ecoregion in each year: 
 
-```{r}
+NOT RUN
 eco_r_d <- subsets_eco2 %>%
   group_by(ecoName, yr)%>% #group by ecoregion name and year
   summarise(ecoCode = unique(ecoCode), #add ecoregion code back in
@@ -1158,12 +1236,12 @@ eco_r_d <- subsets_eco2 %>%
             n_samples = length(unique(sampleId)))%>% #count number of samples per year*ecoregion
   mutate(richness_perSample = richness/n_samples, #calculate richness per sample
          density_perSample = density_xbar/n_samples) #calculate density per sample
-```
+NOT RUN
 
-Save: 
+Save output file: 
 
 ```{r}
-write.csv(eco_r_d, "cleaned_data/eco_richness_density.csv")
+write.csv(ecoSite_means, "cleaned_data/eco_richness_density.csv")
 ```
 
 ### 7. State-wide richness and density for each year:
@@ -1176,26 +1254,42 @@ Already completed above for ecoregion-level analyses - use "subsets_eco" as star
 
 ##### ii. Drop years with 10 or fewer sites: 
 
+First, visualization of # sites per year in subsetted data (subsets_eco):
+
 ```{r}
-statewide_10plus <- subsets_eco %>%
+subsets_eco%>%
+  group_by(yr)%>%
+  summarise(n_sites = length(unique(siteId)))%>%
+  ggplot(aes(x = yr, y = n_sites))+
+  geom_bar(stat = "identity", color = "black", fill = "grey")+
+  geom_hline(aes(yintercept = 10), color = "red", linetype = "dashed")+
+  theme_classic()+
+  geom_text(aes(x = yr, y = n_sites, label = n_sites), size = 3, vjust = -0.2)+
+  labs(x = "Year", y = "# of sites sampled")
+```
+
+Only 9 sites for most of the 90s - may need to adjust cutoffs. 
+
+Apply 9-site minimum filter:
+
+```{r}
+statewide_9plus <- subsets_eco %>%
   group_by(yr)%>% #group by year
   mutate(n_sites = length(unique(siteId)))%>% #count n unique sites surveyed in that year
   ungroup()%>% #ungroup to retain all columns
-  filter(!n_sites<10) #drop all years with fewer than 10 sites
+  filter(!n_sites<9) #drop all years with fewer than 9 sites
 ```
 
 #### B. Calculate state-wide density and richness by year:
 
-Group by year and count unique taxa, calculate mean total sample density for each year:
+Group by sample, calculate mean total sample density for each year:
 
 ```{r}
-statewide_yearly <- statewide_10plus %>%
-  group_by(yr)%>%
+statewide_yearly <- statewide_9plus %>%
+  group_by(sampleId)%>%
   summarise(richness = length(unique(scientificName)), 
-            dens_xbar = mean(tot_dens), 
-            n_samples = length(unique(sampleId)), 
-            richness_perSample = richness/n_samples, 
-            dens_perSample = dens_xbar/n_samples)
+            tot_dens = unique(tot_dens), 
+            sampleDate = unique(sampleDate))
 ```
 
 Save this dataframe for future analysis: 
@@ -1203,31 +1297,4 @@ Save this dataframe for future analysis:
 ```{r}
 write.csv(statewide_yearly, "cleaned_data/statewide_richness_density.csv")
 ```
-
----
----
-
-## II. Data cleaning steps from Rumschlag et al: 
-
-### 1. Only use wadeable stream data
-  
-### 2. Control for different sampling methods: only use those that have been shown to produce similar results
-
-### 3. Only use area-limited samples
-  
-### 4. Only include genera that were identified by both agencies (USGS and EPA)
-  
-### 5. Address changes in taxonomy: 
-
-#### A. Update old taxa names to the new taxonomy
-
-#### B. Create complexes of genera when unclear if updated or not. 
-
-### 6. Address ambiguous naming and samples not ID'd to the genus level: (except midges, etc.)
-
-#### A. Drop any obs. not ID'd to genus level
-
-#### B. Use genus level for samples with multiple species names (e.g. species1/species2)
-
-#### C. Normalize any combined genus names - e.g., for "genus1/genus2", change all observations of "genus1" or "genus2" to "genus1/genus2".
 
