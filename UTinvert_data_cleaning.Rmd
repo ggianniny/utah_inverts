@@ -219,7 +219,7 @@ For now - using the same cutoff as Rumschlag et al:
 
 ```{r}
 taxa_meta_sampleprop <- taxa_meta %>%
-  filter(!sampleProp < 0.055) #remove all observations with sampleProp < 0.055
+  filter(!sampleProp<0.055) #remove all observations with sampleProp < 0.055
 ```
 
 Using this cutoff means we lose `r round(((nrow(taxa_meta)-nrow(taxa_meta_sampleprop))/nrow(taxa_meta))*100, 2)` percent of observations (`r nrow(taxa_meta)-nrow(taxa_meta_sampleprop)` individual observations). 
@@ -299,9 +299,9 @@ Next, drop all eggs, exuvia, and adult insects in the to.drop list of orders:
 
 ```{r}
 taxa_meta_stage <- taxa_meta_sampleprop%>%
-  filter(!lifeStage == "Egg", #drop all eggs
-         !lifeStage == "Exuvia")%>% #drop all exuvia
-  filter(!(lifeStage == "Adult"&order%in%to.drop)) #drop all adults from the orders in the to.drop list
+  filter(!lifeStage=="Egg", #drop all eggs
+         !lifeStage=="Exuvia")%>% #drop all exuvia
+  filter(!(lifeStage=="Adult"&order%in%to.drop)) #drop all adults from the orders in the to.drop list
 ```
 
 ##### ii. Sampling Method - Keep all for now:
@@ -366,7 +366,7 @@ write.csv(chiro, "cleaned_data/chironomidae.csv")
 First - check which codes correspond with which lifestage
 
 ```{r}
-level_codes <- taxa_meta_labsplit %>%
+level_codes <- taxa_meta %>%
   select(levelName, levelId)%>% #extract level names and codes
   distinct()%>% #combine duplicate rows
   arrange(levelId) #sort by levelID
@@ -376,7 +376,7 @@ level_codes
 Visual: 
 
 ```{r}
-level.hist <- ggplot(taxa_meta_labsplit, aes(x = levelId))+ #x axis = levelId
+level.hist <- ggplot(taxa_meta_stage, aes(x = levelId))+ #x axis = levelId
   geom_histogram(fill = "Grey", color = "Black", bins = 15)+ #changing histogram color and bin size
   geom_vline(xintercept = 23, linetype = "dashed", color = "Red")+ #adding vertical line at 23 (code for genus)
   theme_classic()+
@@ -521,7 +521,7 @@ A few samples from before 1990, vast majority post-1990.
 
 ```{r}
 taxa_meta_date <- taxa_meta_area %>%
-  filter(!year(sampleDate) <1990)
+  filter(!year(sampleDate)<1990)
 ```
 
 #### F. Calculate Density: 
@@ -531,6 +531,8 @@ Calculate density for each observation - density = (# organisms/(labSplit*fieldS
 ```{r}
 taxa_meta_density <- taxa_meta_date %>%
   mutate(taxa_density = (splitCount/(labSplit*fieldSplit))/area)
+
+dim(taxa_meta_density)
 ```
 
 Add site elevations: 
@@ -546,7 +548,7 @@ elev1 <- elevation(latitude = tmd_sites$siteLatitude, longitude = tmd_sites$site
   select(siteId, elev_m)%>% #drop extra cols for merge
   distinct() #remove duplicates
 
-taxa_meta_density2 <- merge(taxa_meta_density, elev1, all.x = T) #merge with taxonomic data
+taxa_meta_density2 <- merge(taxa_meta_density, elev1) #merge with taxonomic data
 ```
 
 Save this file for future analysis: 
@@ -1124,6 +1126,7 @@ Save this file for future analyses:
 ```{r}
 write.csv(subsets_eco1, "cleaned_data/subsetted_full.csv")
 ```
+
 
 ##### ii. Drop years with only a few sites: 
 

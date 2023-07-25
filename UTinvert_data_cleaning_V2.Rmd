@@ -38,6 +38,8 @@ This script is an updated version of *UTinvert_data_cleaning.Rmd* that simplifie
     * Drop eggs and exuvia; count adults for non-insects & insects in orders coleoptera and hemiptera
     
     * Drop all individuals not identified to genus
+      
+      * Extract data for Chironomidae including all individuals at all classification levels
     
   * Calculate total sample density and richness
     
@@ -60,6 +62,8 @@ This script is an updated version of *UTinvert_data_cleaning.Rmd* that simplifie
       * Ecoregions
       
       * Elevation bands
+
+  * Identify and extract data for SGCNs from UT and neigboring states (ID, WY, CO, AZ, NV)
       
 The two input data files are: 
 
@@ -73,16 +77,20 @@ The two input data files are:
     
 Output files are: 
 
-  * **abc**
+  * **cleaned_full.csv** - Has all filters applied, all calculations completed (density, richness, non-insect & insect richness/density, etc), and all site metadata (elevation, elevation bands, ecoregion info)
   
-  * **d**
+  * **chironomidae.csv** - Has data for all samples in family Chironomidae with all filters applied except for classification level. Density calculations for each observation are also included.
+  
+  * **statewide_cleaned.csv, ecoregions_cleaned.csv, and elev_bands_cleaned.csv** - Have fully cleaned data (all filters applied; standardized to 300 individuals, and only including years with 9+ sites) for state-wide, ecoregion, and elevation band analyses respectively. 
+  
+  * **sgcns.csv** - Has cleaned taxonomic data for all SGCNs from UT and neighboring states. All filters have been applied, all calculations have been completed, and all site metadata are included. 
 
 ## I. Merge sample data and sample metadata
 
 Read in the datasets, select key columns listed in intro: *(Note - also adjusting date formatting of sampleDate column to fix dates in the mid-90s coming in as dates in the future - e.g. instead of 1965-01-01, 2065-01-01)*
 
 ```{r}
-metadata <- read.csv("raw_data/Utah_Sample_Data_Final_comids.csv")%>% #read in datafile
+md <- read.csv("raw_data/Utah_Sample_Data_Final_comids.csv")%>% #read in datafile
   select("sampleId" , "customerAbbreviation", "siteId", "siteLongitude", "siteLatitude", "sampleDate", "sampleType", "sampleMethod", "sampleMethodId", "habitatName", "habitatId", "area", "fieldSplit", "labSplit", "mesh", "COMID" )%>% #Selecting desired columns
   mutate(sampleDate = as.Date(sampleDate, format ="%m/%d/%y"),  #recode as date
          flag = ifelse(
@@ -91,73 +99,574 @@ metadata <- read.csv("raw_data/Utah_Sample_Data_Final_comids.csv")%>% #read in d
          sampleDate = as.character(sampleDate), #convert back to character to substring
          sampleDate= ifelse(flag == "N", str_replace(sampleDate, "20", "19"), sampleDate), #substring: correct century (replace "20" with "19") for all flagged rows 
          sampleDate = ymd(sampleDate),  #convert back to date format. 
-         yr = year(sampleDate)) #add year column
+         yr = year(sampleDate), #add year column
+         sampleProp = labSplit*fieldSplit) #add sample proportion column
            
 
-taxa <- read.csv("raw_data/Utah_Taxa_Data_Final.csv")%>% #read in datafile
+tax <- read.csv("raw_data/Utah_Taxa_Data_Final.csv")%>% #read in datafile
   select("organismId" , "sampleId", "taxonomyId", "scientificName", "levelId", "levelName", "phylum", "class", "order", "family", "subFamily", "genus", "species",  "lifeStageId", "lifeStage", "lifeStageAbbreviation", "splitCount", "labSplit", "fieldSplit") #selecting desired columns
 ```
 
 Merge the dataframes and re-code relevant colums as different classes: result should be 185,366 rows x 32 columns
 
 ```{r}
-taxa_meta <- merge(taxa, metadata)%>%#merge
+tax_md <- merge(tax, md)%>%#merge
   mutate(
     customerAbbreviation = as.factor(customerAbbreviation), 
     levelName = as.factor(levelName), #recoding categorical columns as factors
     lifeStage = as.factor(lifeStage), #recoding categorical columns as factors
-    #sampleDate = mdy(sampleDate), #recoding date column in r date format
     sampleType = as.factor(sampleType), #recoding categorical columns as factors
     sampleMethod = as.factor(sampleMethod), #recoding categorical columns as factors
     habitatName = as.factor(habitatName), #recoding categorical columns as factors
     habitatId = as.factor(habitatId)#recoding categorical columns as factors
   )
-  
-dim(taxa_meta) #check dimensions 
-
-range(taxa_meta$sampleDate) #confirming that date range is believable
-```
-
-
-```{r}
-metadata%>%
-  filter(yr >1990)%>%
-ggplot(aes(x = yr))+
-  geom_histogram()+
-  geom_hline(aes(yintercept = 10), linetype = "dashed", color = "red")
 ```
 
 ## II. Data filtering:
+
+**ENTER AND EDIT ALL DATA FILTERS HERE:**
+
+```{r}
+#Sample Proportion:
+sampleProp.cutoff <- 0.055 
+
+#Sample Area:
+sampleArea.min <- 0.05
+sampleArea.max <- 5
+
+#Sample date:
+sampleDate.cutoff <-1990
+
+#Classification level:
+classification.cutoff <- 23 #Genus = levelId 23 (larger #'s = finer levels of classification)
+
+#Life stages:
+lifeStages.toDrop <- c("Egg", "Exuvia") #Life stages to drop across all taxa
+
+dropAdults <- tax_md%>% #Extracting orders from which to drop adults (all insect orders except Hemiptera and Coleoptera)
+  filter(class == "Insecta")%>%
+  distinct()%>%
+  filter(!order == "Hemiptera", !order == "Coleoptera")
+```
   
-### A. Drop samples with sample proportion (lab split * field split) <0.05
-    
-### B. Drop samples with sample area >5 or less than 0.05m
-    
-### C. Drop samples from before 1990
-    
-### D. Drop eggs and exuvia; count adults for non-insects & insects in orders coleoptera and hemiptera
-    
-### E. Drop all individuals not identified to genus
-    
+### A. Apply Filters to overall dataset: 
+
+```{r}
+tax_md_filtered <- tax_md %>%
+  filter(!sampleProp<sampleProp.cutoff, #Sample Proportion
+         !area<sampleArea.min, !area>sampleArea.max, !is.na(area), #Area
+         !year(sampleDate)<sampleDate.cutoff, #Sample Date
+         !levelId<classification.cutoff, #Classification Level
+         !lifeStage%in%lifeStages.toDrop, #Life Stages
+         !(lifeStage=="Adult"&order%in%dropAdults$order))
+```
+
+Produce summary table of # obs. and % of obs. dropped by each filter:
+
+```{r}
+filters <- c("Sample Proportion", "Sample Area", "Sample Date", "Classification Level", "Life Stage") #list of cutoff names
+cutoffs <- c (">0.055", ">0.05 & <5m2", ">1990", "Genus or finer", "Drop Eggs & Exuvia, Insect adults except Hemiptera & Coleoptera") #list of cutoff criteria
+n.obs <- c(nrow(filter(tax_md, sampleProp <sampleProp.cutoff)),
+           nrow(filter(tax_md, area<sampleArea.min|area>sampleArea.max|is.na(area))),
+           nrow(filter(tax_md, year(sampleDate)<sampleDate.cutoff)), 
+           nrow(filter(tax_md, levelId<classification.cutoff)), 
+           nrow(filter(tax_md, lifeStage=="Adult"&order%in%dropAdults$order|lifeStage%in%lifeStages.toDrop)) #no. observations dropped by each
+           )
+summary_tbl <- data.frame(filters, cutoffs, n.obs)%>% #combine into summary table
+  mutate(perc_observations = round((n.obs/nrow(tax_md))*100, 2)) #calculating percent of observations removed by each filter
+
+knitr::kable(summary_tbl, "pipe", col.names = c("Filter Name", "Cutoff/Criteria", "# Observations Removed", "% Observations Removed"))
+```
+
+### B. Extract data for Chironomidae
+
+Extract all data in family Chironomidae; Apply all filters EXCEPT classification level and calculate densities:
+
+```{r}
+chiro <- tax_md%>%
+  filter(family=="Chironomidae")%>% #Extract all rows with family = Chironomidae
+  filter(!sampleProp<sampleProp.cutoff, #Sample Proportion
+         !area<sampleArea.min, !area>sampleArea.max, !is.na(area), #Area
+         !year(sampleDate)<sampleDate.cutoff, #Sample Date
+         !lifeStage%in%lifeStages.toDrop #Life Stages
+         )%>%
+  mutate(density = (splitCount/sampleProp)/area)
+```
+
+Save:
+
+```{r}
+write.csv(chiro, "cleaned_data/chironomidae.csv")
+```
+
+
+
 ## III. Calculate total sample density and richness
+
+Calculate density for each taxa, then calculate total density and richness for each sample: 
+
+```{r}
+tax_md_dens <- tax_md_filtered%>%
+  mutate(density = (splitCount/sampleProp)/area)%>% #calculate density (split count * sample proportion / area)
+  group_by(sampleId)%>% #group by sample ID
+  mutate(tot_dens = sum(density), #calculate total density, richness, and abundance for each sample
+         richness = length(unique(scientificName)), 
+         tot_abund = sum(splitCount))%>%
+  ungroup() #ungroup to retain all columns
+```
     
+Calculate Insect and non-insect density for each sample: 
+
+```{r}
+tax_md_dens1 <- tax_md_dens %>%
+  mutate(category = ifelse(phylum == "Arthropoda"&class == "Insecta", "insect", "non_insect"), 
+         insect_dens = ifelse(category == "insect", density, 0), 
+         noninsect_dens = ifelse(category == "non_insect", density, 0), 
+         insect_richness = ifelse(category == "insect", scientificName, NA), 
+         noninsect_richness = ifelse(category == "non_insect", scientificName, NA)
+         )%>%
+  group_by(sampleId)%>%
+  mutate(insect_dens = sum(insect_dens), 
+         noninsect_dens = sum(noninsect_dens), 
+         insect_richness = length(unique(na.omit(insect_richness))), 
+         noninsect_richness = length(unique(na.omit(noninsect_richness))))%>%
+  ungroup()
+```
+
+
 ## IV. Add additional site info: 
   
 ### A. Elevation and elevation bands
-    
+
+
+Add site elevations: 
+
+```{r}
+sites <- tax_md_dens1%>%
+  select(siteId, siteLongitude, siteLatitude)%>%
+  distinct() #extract lat/long for each site
+
+elev <- elevation(latitude = sites$siteLatitude, longitude = sites$siteLongitude, elevation_model = "srtm3", username = "ggianniny")%>% #calculate elevation using the SRTM3 model (uses GeoNames API)
+  mutate(siteId = sites$siteId)%>% #add siteIDs 
+  rename(elev_m = elevation_geonames)%>% #rename cols for merge
+  select(siteId, elev_m)%>% #drop extra cols for merge
+  distinct() #remove duplicates
+
+tax_md_elev <- merge(tax_md_dens1, elev, all.x = T) #merge with taxonomic data
+```
+
+Add elevation bands: 
+
+Elevation bands are <1400 m, 1400-1800, 1800-2200, 2200-2600, and >2600m. 
+
+Create a vector of elevation breaks (NOTE- just change the values in this vector to change elevation band cutoffs)
+
+```{r}
+elev.breaks <- c(1400, 1800, 2200, 2600) #vector of elevation band breaks
+
+elev.break.names <- c(
+  paste("<", elev.breaks[1], sep = ""), 
+  paste(elev.breaks[1], elev.breaks[2], sep = "-"),
+  paste(elev.breaks[2], elev.breaks[3], sep = "-"),
+  paste(elev.breaks[3], elev.breaks[4], sep = "-"),
+  paste(">", elev.breaks[4], sep = "") 
+) #create vector of elevation class names based on breaks specified above
+
+elev.break.names <- paste(elev.break.names, "m", sep = " ") #adding units
+```
+
+Add a column with elevation band to the dataset: 
+
+```{r}
+tax_md_bands <- tax_md_elev %>%
+  mutate(elev_band = 
+           case_when(
+             elev_m<elev.breaks[1]~elev.break.names[1], 
+             elev_m>=elev.breaks[1]&elev_m<elev.breaks[2]~elev.break.names[2],
+             elev_m>=elev.breaks[2]&elev_m<elev.breaks[3]~elev.break.names[3],
+             elev_m>=elev.breaks[3]&elev_m<=elev.breaks[4]~elev.break.names[4],
+             elev_m>elev.breaks[4]~elev.break.names[5]
+           ), #adding elevation bands
+         band_code = 
+           case_when(
+             elev_m<elev.breaks[1]~1, 
+             elev_m>=elev.breaks[1]&elev_m<elev.breaks[2]~2,
+             elev_m>=elev.breaks[2]&elev_m<elev.breaks[3]~3,
+             elev_m>=elev.breaks[3]&elev_m<=elev.breaks[4]~4,
+             elev_m>elev.breaks[4]~5
+           ) #adding band codes for easier plotting
+         )
+```
+
 ### B. Ecoregions
-    
+
+First, read in shapefile of UT ecoregions and extract site coordinates:
+
+```{r}
+ut_er <- readOGR("gis/data/ut_eco_l3")%>% #read in shapefile
+  spTransform(("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")) #Update CRS
+  
+
+site_xy <- md %>%
+  select(siteId, siteLongitude, siteLatitude) #extract site coords
+```
+
+Convert site coordinates to spatial coordinates: 
+
+```{r}
+xy <- site_xy[,c(2,3)] #extract lat/long cols
+
+spdf <- SpatialPointsDataFrame(coords = xy, data = site_xy,#create spatialPoints DF using lat/long cols
+                               proj4string = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")) #updating projection
+```
+
+Intersect points with shapefile: 
+
+```{r}
+site_ers <- over(spdf, ut_er)%>%
+  bind_cols(site_xy) #add site coordinates back to dataframe
+```
+
+Check with plotting: 
+
+```{r}
+ut_er@data$id <- rownames(ut_er@data) #add ID column for join
+
+ut_er_df <- fortify(ut_er)%>% #transform ecoregion spatialPolygons Dataframe into a dataframe
+  left_join(ut_er@data, by = "id") #add ecoregion data back in
+
+ggplot(ut_er_df, aes(x=long, y = lat, group = group, fill = US_L3NAME))+ #plot ecoregions, fill based on region
+  geom_polygon(color = "black"
+               , alpha = 0.25
+               )+ #polygon aesthetics - adjusting line colors and transparency
+  theme_void()+
+ geom_point(data = site_ers, aes(x = siteLongitude, y = siteLatitude, group = NULL, color = US_L3NAME, fill = NULL), size = 0.5)+ #add points for each site, color-coded by ecoregion
+  labs(color = "Ecoregion Name", fill = "Ecoregion Name") #updating legend title
+```
+
+
+Success! Now, extract ecoregion info and add back to primary dataset: 
+
+```{r}
+ecoregions <- site_ers %>%
+  select(siteId, US_L3CODE, US_L3NAME)%>%
+  rename(ecoCode = US_L3CODE, ecoName = US_L3NAME)%>% #extract ecoregion ID and name
+  distinct()
+
+#Save for future use:
+write.csv(ecoregions,"cleaned_data/site_ecoregions.csv")
+```
+
+Add to overall dataset: 
+
+```{r}
+tax_md_eco <- merge(tax_md_bands, ecoregions)
+```
+
+## SAVE FULL DATASET:
+
+```{r}
+write.csv(tax_md_eco, "cleaned_data/cleaned_full.csv")
+```
+
 ## V. Normalize data for state-wide, ecoregion, and elevation band analyses
   
 ### A. Drop samples with < 300 individuals
-    
+
+```{r}
+tax_md_300 <- tax_md_eco%>%
+  filter(!tot_abund<300)
+```
+
+This results in losing `r nrow(tax_md_eco)-nrow(tax_md_300)` individual observations (`r round(((nrow(tax_md_eco)-nrow(tax_md_300))/nrow(tax_md_eco)*100),2)` percent of the data)
+
 ### B. Randomly subsample remaining samples to 300 individuals
-    
-### C. For each grouping: drop years with < 10 sites:
+
+First, make new dataframe with a row for each individual in each sample (i.e. for sample A with 6 observations of organism B, want 6 rows with "organism B"): 
+
+```{r}
+sampleId.reps <- rep(tax_md_300$sampleId, tax_md_300$splitCount) #repeat sample ID for # in splitCount col
+taxaName.reps <- rep(tax_md_300$scientificName, tax_md_300$splitCount) #repeat taxa name for # in splitCount col
+taxa_counts <- data.frame(sampleId.reps, taxaName.reps) #create new dataframe with these objects
+```
+
+Randomly select 300 observations from within each sample ID: 
+
+```{r}
+set.seed(123) #for reproducibility
+
+sample_subsets <- taxa_counts %>%
+  group_by(sampleId.reps)%>% #group by sample ID
+  slice_sample(n = 300)%>% #select 300 random rows from within that sample. 
+  arrange(sampleId.reps, taxaName.reps)
+
+nrow(sample_subsets)/length(unique(sample_subsets$sampleId.reps)) #double checking that correct no. rows were selected
+```
+
+Distill this dataframe back to 1 row for each sample + taxa combo, column for splitCount for that taxa
+
+```{r}
+subsets_short <- sample_subsets %>%
+  group_by_all()%>% #group by all columns
+  count()%>% #count # duplicate columns and add to new col
+  rename(splitCount = n, sampleId = sampleId.reps, scientificName = taxaName.reps)  #updating column names for merge
+
+sum(subsets_short$splitCount)/length(unique(subsets_short$sampleId))
+```
+
+Add sample metadata back in: 
+
+```{r}
+full_md <- tax_md_300%>%
+  select(1:4, 21:49, -density, -insect_richness, -noninsect_richness, -category)%>% #select metadata columns from ecoregion density DF (including total sample density calculated before sub-sampling)
+  distinct() #remove duplicate rows
+
+subsets_md <- merge(subsets_short, full_md) #merge with subsetted taxonomic data
+sum(subsets_md$splitCount)/length(unique(subsets_md$sampleId))
+```
+
+Add taxonomic information back in; re-calculate richness:
+
+```{r}
+taxa_info <- tax_md_300 %>%
+  select(taxonomyId, scientificName, phylum, class, order, family, subFamily, genus, species)%>%
+  distinct()
+
+subsets_full <- merge(subsets_md, taxa_info, all.y = F)%>%
+  mutate(category = ifelse(phylum == "Arthropoda"&class=="Insecta", "insect", "non_insect"))%>% #add category back ing
+  mutate(insect_richness = ifelse(category == "insect", scientificName, NA), 
+         noninsect_richness = ifelse(category == "non_insect", scientificName, NA))%>% #prep for calculating insect and non-insect richness
+  group_by(sampleId)%>%
+  mutate(richness = length(unique(scientificName)), #re-calculate richness
+         insect_richness = length(unique(na.omit(insect_richness))), 
+         noninsect_richness = length(unique(na.omit(noninsect_richness))) #re-calculate insect and non-insect richness
+           )%>%
+  ungroup()#ungroup to retain all columns
+```
+
+## SAVE SUBSETTED FILE: 
+
+```{r}
+write.csv(subsets_full, "cleaned_data/subsetted_full.csv")
+```
+
+### C. For each grouping: drop years with < 9 sites, select desired columns, and remove duplicate rows:
     
 #### i. State-wide
+
+```{r}
+statewide_9plus <- subsets_full%>%
+  group_by(yr)%>%
+  mutate(n_sites = length(unique(siteId)))%>%
+  ungroup()%>%
+  filter(!n_sites<9)%>%
+  select(sampleId, siteId, sampleDate, yr, ecoName, ecoCode, elev_band, band_code, richness, tot_dens, insect_dens, insect_richness, noninsect_dens, noninsect_richness)%>%
+  distinct()
+```
+
+Save:
+
+```{r}
+write.csv(statewide_9plus, "cleaned_data/statewide_cleaned.csv")
+```
       
 #### ii. Ecoregions
-      
+
+```{r}
+eco_9plus <- subsets_full%>%
+  group_by(ecoName, yr)%>%
+  mutate(n_sites = length(unique(siteId)))%>%
+  ungroup()%>%
+  filter(!n_sites<9, 
+         !ecoName == "Wyoming Basin")%>%
+  select(sampleId, siteId:COMID, yr:ecoName, insect_richness, noninsect_richness)%>%
+  distinct()
+```
+
+Save:
+
+```{r}
+write.csv(eco_9plus, "cleaned_data/ecoregion_cleaned.csv")
+```
+
 #### iii. Elevation bands
- 
+
+```{r}
+bands_9plus <- subsets_full%>%
+  group_by(elev_band, yr)%>%
+  mutate(n_sites = length(unique(siteId)))%>%
+  ungroup()%>%
+  filter(!n_sites<9)%>%
+  select(sampleId, siteId:COMID, yr:ecoName, insect_richness, noninsect_richness)%>%
+  distinct()
+```
+
+Save:
+
+```{r}
+write.csv(bands_9plus, "cleaned_data/elev_bands_cleaned.csv")
+```
+
+## VI. Identify and extract SGCNs from UT and neighboring states
+
+### A. UT SSGCNs:
+
+Make a list of all invertebrate UT SGCNs (from https://wildlife.utah.gov/pdf/WAP/2022-05-sgcn-list.pdf):
+
+```{r}
+ut.sgcn.list <- c( "Pacifastacus gambelii", "Stygobromus utahensis","Oreohelix yavapai cummingsi", "Fossaria techella","Pyrgulopsis pilsbryana", "Pyrgulopsis peculiaris", "Pyrgulopsis plicata", "Oreohelix parawanensis", "Pyrgulopsis inopinata", "Physa megalochlamys", "Planorbella binneyi", "Gastrocopta quadridens", "Oreohelix peripherica", "Pyrgulopsis deserta", "Tryonia porrecta", "Oreohelix eurekensis", "Stagnicola bonnevillensis", "Fluminicola coloradoensis", "Pyrgulopsis hamlinensis", "Oxyloma kanabense", "Planorbella oregonensis ", "Pyrgulopsis lindahlae", "Pyrgulopsis anguina"," Oreohelix haydeni", "Oreohelix howardi","Vertigo concinnula", "Gastrocopta pilsbryana", "Stagnicola montanensis", "Pyrgulopsis variegata", "Pyrgulopsis nuwuvi", "Pyrgulopsis fusca", "Pyrgulopsis pinetorum", "Pupoides hordaceus", "Colligyrus greggi", "Succinea rusticana", "Pyrgulopsis santaclarensis", "Catinella stretchiana", "Gastrocopta ashmuni", "Pyrgulopsis chamberlini", "Ogaridiscus subrupicola", "Hawaiia neomexicana", "Pyrgulopsis saxatilis", "Vallonia perspectiva", "Pupilla syngenes","Physella utahensis", "Margaritifera falcata", "Physella zionis", "Stagnicola traski", "Anodonta nutalliana") 
+
+ut_sgcn <- tax_md_eco %>%
+ filter(scientificName%in%ut.sgcn.list)
+
+ut_sgcn<- ut_sgcn%>%
+  mutate(state = rep("UT", nrow(ut_sgcn)))
+
+sort(unique(ut_sgcn$scientificName)) #return list of species present in this dataset. 
+```
+
+Four UT SGCNs present in the dataset. 
+
+### B. Idaho SGCNs:
+
+Listed at https://www.landcan.org/pdfs/appendixB.pdf  
+
+Make a vector with all ID SGCN scientific names; extract data with those taxa present: 
+
+```{r}
+id.sgcn.list <- c("Caurinella idahoensis","Ametropus ammophilus", "Centroptilum selanderorum", "Capnia zukeli", "Soyedina potteri", "Pictetiella expansa", "Agapetus montanus", "Anodonta californiensis", "Gonidea angulata", "Margaritifera falcata", "Oreohelix waltoni", "Oreohelix vortex", "Oreohelix strigosa goniogyra", "Oreohelix jugalis", "Oreohelix intersum", "Oreohelix idahoensis", "Oreohelix haydeni", "Polygyrella polygyrella", "Cryptomastix populi", "Cryptomastix harfordiana", "Cryptomastix mullani tuckeri", "Cryptomastix mullani latilabris", "Cryptomastix mullani clappi", "Cryptomastix mullani blandi", "Cryptomastix magnidentata", "Allogona ptychophora solida", "Allogona lombardii", "Pristiloma idahoense", "Udosarx lyrata", "Zacoleus idahoensis", "Prophysaon humile", "Hemphillia camelus", "Kootenaia burkei", " Discus marmorensis", "Anguispira nimapuna", "Helicodiscus salmonaceus", "Radiodiscus abietum", "Planogyra clappi", "Physa natricina", "Lanx", "Fisherola nuttalli", "Stagnicola montanensis", "Stagnicola idahoensis", "Stagnicola hinkleyi", "Valvata utahensis", "Taylorconcha serpenticola", "Pristinicola hemphilli", "Pyrgulopsis robusta", "Pyrgulopsis pilsbryana", "Pyrgulopsis bruneauensis", "Fluminicola coloradoensis")
+
+id_sgcn <- tax_md_eco%>%
+  filter(scientificName%in%id.sgcn.list)
+  
+id_sgcn<- id_sgcn%>%
+  mutate(state = rep("ID", nrow(id_sgcn)))
+
+sort(unique(id_sgcn$scientificName))
+```
+
+5 Idaho SGCNs present in the dataset. 
+
+
+### C. Wyoming SGCNs:
+
+List of all invertebrate SGCNs downloaded from:
+
+https://wyndd.org/species_list/?wgfd_sgcn=Statewide&wy_occur=Regular%2CIrregular&wy_origin=Native%2CNonnative&res_status=Current&tax_level=Species%2CSubspecies%2FVariety&columns=sciname%2Ccomname%2Csynonyms%2Ctaxgroup%2Ctaxgroup2%2Cblm_wy%2Cg_rank%2Cs_rank%2Cusfws_esa%2Cusfs_sens%2Cusfs_solc%2Cwgfd_sgcn%2Cwy_contrib%2Cwyndd_soc%2Cwy_occur%2Cwy_origin&loc_settings=documentedObs%2Cdist_mod%2Cregular%2Cirregular&servicePrefix=prod_ 
+
+Read in list of all inverts:
+
+```{r}
+wy.sgcn.list <- read.csv("Wyoming_SGCNS.csv", skip = 1)
+```
+
+Make new dataframe with all present in UT: 
+
+```{r}
+wy_sgcn <- tax_md_eco %>%
+  filter(scientificName%in%wy.sgcn.list$Scientific.Name)
+
+wy_sgcn <- wy_sgcn%>%
+  mutate(state = rep("WY", nrow(wy_sgcn)))
+
+sort(unique(wy_sgcn$scientificName))
+```
+
+11 Wyoming SGCNs present in the dataset
+
+### D. Colorado SGCNs: 
+
+Make list of Colorado invertebrate SGCNs; filter out of full dataset: 
+
+Mollusks from https://cpw.state.co.us/Documents/WildlifeSpecies/SWAP/CO_SWAP_Chapter2.pdf 
+Invertebrates from https://cpw.state.co.us/Documents/WildlifeSpecies/SWAP/CO_SWAP_FULLVERSION.pdf (Appendix B, table B-1 starting on page B-1)
+
+```{r}
+co.sgcn.list <- c("Ferrissia walker",
+"Promenetus umbillicatellus", "Anodontoides ferussacianus", "Ferrissia fragilis",
+"Physa cupreonitens", "Uniomerus tetralasmus", "Acroloxus coloradensis", "Promenetus exacuous", "Physa gyrina utahensis", "Gumaga griseola", "Ochrotrichia susanae", "Ochrotrichia trapoiza", "Argia alberta", "Calopteryx aequabilis", "Calopteryx maculata", "Cordulegaster dorsalis", "Dromogomphus spoliatus", "Enallagma vesperum", "Epitheca petechialis", "Erpetogomphus compositus", "Erythemis vesiculosa", "Lestes alacer","Leucorrhinia glacialis", "Libellula nodisticta", "Somatochlora ensigera", "Somatochlora hudsonica", "Stylurus intricatus", "Sympetrum madidum","Acentrella parvula","Acerpenna pygmaea", "Ametropus neavei","Apobaetis etowah","Baetis brunneicolor", "Camelobaetidius warreni", "Ephemerella apopsis", "Homoeneuria alleni", "Labiobaetis apache", "Lachlania saskatchewanensis", "Macdunnoa persimplex", "Neochoroterpes oklahoma", "Plauditus cestus","Pseudiron centralis", "Rhithrogena flavianula","Arsapnia arapahoe", "Capnia arapahoe", "Capnia nelsoni","Mesocapnia frisoni", "Pteronarcys californica", "Nemomydas solitarius")
+
+co_sgcn <- tax_md_eco%>%
+  filter(scientificName%in%co.sgcn.list)
+
+co_sgcn <- co_sgcn%>%
+  mutate(state = rep("CO", nrow(co_sgcn)))
+
+sort(unique(co_sgcn$scientificName))
+```
+
+9 Colorado SGCNs present in the dataset. 
+
+### E. Arizona SGCNs
+
+Full list downloaded from: https://awcs.azgfd.com/appendices/appendix-d-species-of-greatest-conservation-need-with-vulnerability-scores 
+
+Read in datafile with all AZ SGCNs, extract invertebrates: 
+
+```{r}
+az.sgcn.list <- read.csv("AZ_SGCNs.csv")%>%
+  filter(Taxonomic.Group == "Invertebrate")
+```
+
+Filter out observations of these taxa from the full dataset: 
+
+```{r}
+az_sgcn <- tax_md_eco%>%
+  filter(scientificName%in%az.sgcn.list$Scientific.Name)
+
+az_sgcn<- az_sgcn%>%
+  mutate(state = rep("AZ", nrow(az_sgcn)))
+
+sort(unique(az_sgcn$scientificName))
+```
+
+5 AZ SGCNs in the dataset. 
+
+### F. Nevada SGCNs: 
+
+Make a list of all Nevada invertebrate SGCNs (from https://www.ndow.org/wp-content/uploads/2022/01/2013-NV-WAP-Complete-NOT-ADA.pdf, table starting on page 73)
+
+```{r}
+nv.sgcn.list <- c("Anodonta californiensis","Tryonia variegata", "Pyrgulopsis pellita", "Pyrgulopsis erythropoma", "Pyrgulopsis peculiaris", "Pyrgulopsis papillata", "Pyrgulopsis coloradensis", "Pyrgulopsis lata", "Pyrgulopsis montana", "Pyrgulopsis fausta", "Pyrgulopsis crystalis", "Pyrgulopsis nanus", "Pyrgulopsis dixensis", "Pyrgulopsis aloba", "Pyrgulopsis villacampae", "Pyrgulopsis leporina", "Pyrgulopsis augustae", "Pyrgulopsis notidicola", "Pyrgulopsis isolata", "Pyrgulopsis gracilis", "Pyrgulopsis fairbanksensis", "Pyrgulopsis breviloba", "Pyrgulopsis planulata", "Pyrgulopsis bruesi", "Tryonia clathrata", "Pyrgulopsis marcida", "Pyrgulopsis hubbsi", "Pyrgulopsis humboldtensis", "Pyrgulopsis sathos", "Pyrgulopsis wongi","Pyrgulopsis imperialis", "Pyrgulopsis sublata", "Pyrgulopsis landyei", "Pyrgulopsis basiglans", "Pyrgulopsis lockensis", "Pyrgulopsis anguina", "Pyrgulopsis pisteri", "Tryonia ericae", "Pyrgulopsis avernalis", "Pyrgulopsis carinifera", "Tryonia monitorae", "Pyrgulopsis neritella", "Pyrgulopsis militaris", "Pyrgulopsis serrata", "Pyrgulopsis variegata", "Pyrgulopsis micrococcus", "Pyrgulopsis pictilis", "Pyrgulopsis merriami", "Pyrgulopsis aurata", "Tryonia elata","Fluminicola dalli", "Pyrgulopsis sadai", "Pyrgulopsis bifurcata", "Juga interioris", "Pyrgulopsis turbatrix", "Pyrgulopsis anatina", "Pyrgulopsis umbilicata", "Pyrgulopsis sulcata", "Tryonia angulata", "Pyrgulopsis deaconi", "Pyrgulopsis limaria", "Eremopyrgus eganensis", "Pyrgulopsis sterilis", "Pyrgulopsis orbiculata", "Pyrgulopsis cruciglans", "Fluminicola turbiniformis", "Pyrgulopsis millenaria", "Pyrgulopsis hovinghi", "Pyrgulopsis vinyardi", "Fluminicola virginius")
+
+nv_sgcn <- tax_md_eco %>%
+  filter(scientificName%in%nv.sgcn.list)
+
+nv_sgcn<- nv_sgcn%>%
+  mutate(state = rep("NV", nrow(nv_sgcn)))
+
+sort(unique(nv_sgcn$scientificName))
+```
+
+Only 1 NV SGCN present in dataset. 
+
+### G. Combine all states and save: 
+
+```{r}
+all_sgcn <- rbind(ut_sgcn, id_sgcn, wy_sgcn, co_sgcn, az_sgcn, nv_sgcn) #rowbind data from all 6 states
+
+
+#Combine states for taxa that are listed in multiple states (e.g. instead of a row for Taxa 1/ UT and another row for Taxa 1/ NV, want 1 row with Taxa 1 / UT,NV)
+
+sgcn_states <- all_sgcn%>% 
+  distinct(scientificName, state)%>% #extract states and taxa names
+  arrange(scientificName)%>% #sort by taxa name
+  group_by(scientificName)%>% # group by taxa name
+  summarise(states = toString(unique(state))) #create new "states" column with a character string of all unique values of "state" within that taxa
+
+all_sgcn_states <- merge(all_sgcn, sgcn_states)%>% #merge with the full SGCN dataset
+  select(!state)%>% #drop the old "state" column
+  filter(!splitCount == 0)%>% #drop taxa with split counts of 0
+  distinct() #drop duplicate rows
+  
+sort(unique(all_sgcn_states$scientificName)) #return list of all SGCN taxa present in the data
+```
+
+Total of 20 SGCNs that are listed in different states. **NOTE - some of these taxa (4) are listed in the dataset but have splitCounts of 0 - dropping those here. **
+
+Save this file for future analysis: 
+
+```{r}
+write.csv(all_sgcn_states,"cleaned_data/sgcns.csv")
+```
+

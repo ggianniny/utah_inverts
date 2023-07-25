@@ -20,14 +20,19 @@ This document provides background info on each of the cleaned datasets in the "c
   
   8. **high_zapada_info.csv** has site info (coordinates, elevations, stream names, etc.) for all sites over 3000m with *Zapada* observations. 
   
-  9. **sgcns.csv** has taxonomic info, sample metadata, taxa density, site elevation, and listing states for SGCN taxa from Utah, Colorado, Arizona, Nevda, Idaho, and Wyoming that are present in the dataset. 
+  9. **sgcns.csv** has taxonomic info, sample metadata, taxa density, site elevation, and listing states for SGCN taxa from Utah, Colorado, Arizona, Nevda, Idaho, and Wyoming that are present in the dataset. **NOTE** - as of 7/25/23, this file is produced by the updated data cleaning V2 script instead of the original version. 
   
-  10. **site_ecoregions.csv** has sample metadata and taxonomic data along with added columns for ecoregion name and ecoregion ID.
+  10. **site_ecoregions.csv** has sample metadata and taxonomic data along with added columns for ecoregion name and ecoregion ID. **NOTE** - as of 7/25/23, this file is produced by the updated data cleaning V2 script instead of the original version. 
   
   11. **eco_richness_density.csv** has taxonomic richness and density calculations for each utah ecoregion and year combo. Samples with fewer than 300 observations have been dropped from the dataset, and samples with over 300 observations have been randomly subsampled to 300 individuals. In addition to overall richness and mean density, there are also columns for richness per site and mean density per site to account for variation in # sites sampled per year. 
   
-  12. **subsetted_full.csv** has sample metadata and taxonomic info, ecoregion data, and elevation data. Samples with <300 individuals have been dropped, and the remaining samples have been randomly subsetted to 300 individuals. 
+  12. **subsetted_full.csv** has sample metadata and taxonomic info, ecoregion data, and elevation data. Samples with <300 individuals have been dropped, and the remaining samples have been randomly subsetted to 300 individuals. **NOTE** - as of 7/25/23, this file is produced by the updated data cleaning V2 script instead of the original version. 
   
   13. **statewide_richness_density.csv** has taxonomic richness and density calculations for the entire state for each year in the record. Samples with fewer than 300 observations have been dropped from the dataset, and samples with over 300 observations have been randomly subsampled to 300 individuals. In addition to overall richness and mean density, there are also columns for richness per site and mean density per site to account for variation in # sites sampled per year. 
   
+  14. **chironomidae.csv** has density calculations for all samples in family Chironomidae. All data filters have been applied except for the classification level filter. **NOTE** - as of 7/25/23, this file is produced by the updated data cleaning V2 script instead of the original version. 
+  
+  15. **cleaned_full.csv** Has all filters applied, all calculations completed (density, richness, non-insect & insect richness/density, etc), and all site metadata (elevation, elevation bands, ecoregion info)
+  
+  16. **statewide_cleaned.csv, ecoregions_cleaned.csv, and elev_bands_cleaned.csv** - Have fully cleaned data (all filters applied; standardized to 300 individuals, and only including years with 9+ sites) for state-wide, ecoregion, and elevation band analyses respectively.
   
