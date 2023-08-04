@@ -120,6 +120,8 @@ tax_md <- merge(tax, md)%>%#merge
     habitatName = as.factor(habitatName), #recoding categorical columns as factors
     habitatId = as.factor(habitatId)#recoding categorical columns as factors
   )
+
+dim(tax_md)
 ```
 
 ## II. Data filtering:

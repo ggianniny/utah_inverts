@@ -1,6 +1,6 @@
 ## README - Utah Invert Data Project
 #### Gordon Gianniny
-#### Updated 05/18/2023
+#### Updated 07/25/2023
 
 Data and code repository for Utah Aquatic Insect Decline project. Project objectives are to clean up long-term monitoring data from sites across Utah and test for trends in taxonomic richness, etc. over time. 
 
